@@ -1,0 +1,2944 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="theme-color" content="#f5f0e8"/>
+<title>Workly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;background:#f5f0e8;}
+#root{min-height:100vh;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(100,80,40,.2);border-radius:4px;}
+input[type=date]::-webkit-calendar-picker-indicator{filter:opacity(.4);}
+select option{background:#faf8f3;color:#1a1612;}
+</style>
+</head>
+<body>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f5f0e8;color:#c9a84c;font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;letter-spacing:-.02em;">Workly</div></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://teyihnnrsuhdbhrknfza.supabase.co";
+const SUPABASE_KEY = "sb_publishable_EQ3FGXaZssgN1Ebo9Fn7xw_POeUHo2n";
+const SUPABASE_BUCKET = "workly-archivos";
+
+// Cliente Supabase mínimo (sin SDK, fetch nativo)
+const supa = {
+  storage: {
+    async list(obraKey) {
+      if (!SUPABASE_URL || !SUPABASE_KEY) return { data: [], error: "Sin configurar" };
+      const r = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${SUPABASE_BUCKET}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY },
+        body: JSON.stringify({ prefix: obraKey + "/", limit: 100, offset: 0 }),
+      });
+      const data = await r.json();
+      return { data: Array.isArray(data) ? data : [], error: null };
+    },
+    async upload(obraKey, file) {
+      if (!SUPABASE_URL || !SUPABASE_KEY) return { error: "Sin configurar" };
+      const path = `${obraKey}/${Date.now()}_${file.name}`;
+      const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${path}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY, "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" },
+        body: file,
+      });
+      const data = await r.json();
+      return data.error ? { error: data.error } : { data: { path }, error: null };
+    },
+    async remove(path) {
+      if (!SUPABASE_URL || !SUPABASE_KEY) return { error: "Sin configurar" };
+      const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY },
+        body: JSON.stringify({ prefixes: [path] }),
+      });
+      return { error: r.ok ? null : "Error al eliminar" };
+    },
+    publicUrl(path) {
+      return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${path}`;
+    }
+  }
+};
+
+// ─── TEMA CLARO ───────────────────────────────────────────────────────────────
+const T = {
+  bg:       "#f5f0e8",
+  bg2:      "#faf8f3",
+  bg3:      "#eee9df",
+  bg4:      "#e8e2d7",
+  bgDark:   "#1a1612",
+  border:   "rgba(160,140,100,0.22)",
+  borderH:  "rgba(160,140,100,0.45)",
+  gold:     "#c9a84c",
+  goldDim:  "rgba(201,168,76,0.10)",
+  goldBorder:"rgba(201,168,76,0.32)",
+  goldDark: "#a8863a",
+  text:     "#1a1612",
+  text2:    "#7a6e5f",
+  text3:    "#b5a898",
+  green:    "#2d7d5a",
+  greenDim: "rgba(45,125,90,0.10)",
+  blue:     "#2e6da4",
+  blueDim:  "rgba(46,109,164,0.10)",
+  purple:   "#7c5cbf",
+  red:      "#c0392b",
+  redDim:   "rgba(192,57,43,0.10)",
+  orange:   "#c97a2e",
+  orangeDim:"rgba(201,122,46,0.10)",
+  display:  "'Playfair Display',Georgia,serif",
+  sans:     "'Outfit',sans-serif",
+  mono:     "'Courier New',monospace",
+  shadow:   "0 1px 8px rgba(100,80,40,0.09)",
+  shadowM:  "0 4px 20px rgba(100,80,40,0.13)",
+  shadowL:  "0 8px 40px rgba(100,80,40,0.18)",
+};
+
+const ADMIN_NAME = "JCM";
+const ADMIN_PIN  = "7002";
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function getDeviceId(){
+  let id=localStorage.getItem("wk_device_id");
+  if(!id){id="dev_"+Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem("wk_device_id",id);}
+  return id;
+}
+const normObra = o => (o||"").toLowerCase().replace(/[^a-z0-9]/g,"").trim();
+const obraKey  = o => (o||"").toLowerCase().replace(/[^a-z0-9_-]/g,"_").trim().slice(0,80);
+const workerInitials = w => w.split(/\s+/).map(p=>p[0]||"").join("").toUpperCase().slice(0,2);
+const pc = (v,t) => t>0 ? ((v/t)*100).toFixed(1) : 0;
+const fmtShort = f => { if(!f)return""; const p=f.split("-"); const mn=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]; return `${p[2]} ${mn[+p[1]]||""}`; };
+// Si se abre con ?print=1, mostrar el HTML guardado y lanzar print
+if(location.search.includes('print=1')){
+  const ph=localStorage.getItem('wk_print_html');
+  if(ph){
+    document.open();document.write(ph.replace('</body>','<script>window.onload=function(){window.print();}<\/scr'+'ipt></body>'));document.close();
+  }
+}
+const today = () => new Date().toISOString().split("T")[0];
+const isSunday = f => new Date(f+"T12:00:00").getDay()===0;
+const isSat    = f => new Date(f+"T12:00:00").getDay()===6;
+const isFri    = f => new Date(f+"T12:00:00").getDay()===5;
+function isFestivo(f,festivos){ if(isSunday(f))return true; return festivos.some(x=>x.fecha===f); }
+function getHT(e,festivos){
+  if(e.tipoOverride)return e.tipoOverride;
+  if(isFestivo(e.fecha,festivos))return"f";
+  if(isSat(e.fecha))return"s";
+  return e.horas<=(isFri(e.fecha)?6:9)?"n":"e";
+}
+
+const OC=["#c9a84c","#2e6da4","#2d7d5a","#7c5cbf","#c97a2e","#c0392b","#2980b9","#8e6b3e","#5d8a3c","#b8567a","#3d7a8a","#9b6b9b","#7a8a3d","#8a5d3d","#3d5d8a"];
+const WC=["#c9a84c","#2e6da4","#2d7d5a","#7c5cbf","#c97a2e","#c0392b","#2980b9","#8e6b3e"];
+let _okeys=null;
+function obraColor(obra,allObras){
+  if(!_okeys||_okeys.length===0){_okeys=[...new Set((allObras||[]).map(o=>normObra(o)))].sort();}
+  const i=_okeys.indexOf(normObra(obra));
+  return OC[i<0?0:i%OC.length];
+}
+function workerColor(w,workers){return WC[workers.indexOf(w)%WC.length]||WC[0];}
+const ADM_RULES=[/isdin/i,/lurdes/i,/monja/i];
+function isAdminObra(obra,overrides){const k=normObra(obra);if(overrides[k]===true)return true;if(overrides[k]===false)return false;return ADM_RULES.some(r=>r.test(obra));}
+function isAdminEntry(e,overrides){if(e.subobra)return true;return isAdminObra(e.obra,overrides);}
+
+function abrirPDF(html){} // legacy - no usado
+
+function mostrarPDF(pdfBlob, nombre){
+  const pdfUrl=URL.createObjectURL(pdfBlob);
+  // Overlay con iframe — Safari renderiza PDFs inline y el botón 📤 nativo funciona
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;display:flex;flex-direction:column;background:#000;";
+  const bar=document.createElement("div");
+  bar.style.cssText="background:#1a1612;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:10px;";
+  const title=document.createElement("span");
+  title.textContent=nombre||"Parte de trabajo";
+  title.style.cssText="font-family:Arial;font-weight:700;font-size:13px;color:#fff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+  const btnDown=document.createElement("a");
+  btnDown.textContent="⬇ Descargar";
+  btnDown.href=pdfUrl;
+  btnDown.download=(nombre||"parte")+".pdf";
+  btnDown.style.cssText="background:#c9a84c;color:#1a1612;border:none;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial;flex-shrink:0;text-decoration:none;";
+  const btnClose=document.createElement("button");
+  btnClose.textContent="✕ Cerrar";
+  btnClose.style.cssText="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial;flex-shrink:0;";
+  btnClose.onclick=()=>{document.body.removeChild(overlay);URL.revokeObjectURL(pdfUrl);};
+  bar.appendChild(title);bar.appendChild(btnDown);bar.appendChild(btnClose);
+  const ifr=document.createElement("iframe");
+  ifr.src=pdfUrl;
+  ifr.style.cssText="flex:1;border:none;width:100%;background:#fff;";
+  overlay.appendChild(bar);overlay.appendChild(ifr);
+  document.body.appendChild(overlay);
+}
+
+const NOMBRE_PDF={"JCM":"Juan","Javi ESE2":"Javi","Jimmy Jazz S2":"Jimmy"};
+function nombrePDF(n){return NOMBRE_PDF[n]||n;}
+
+function generarPDFSimple(obraName,subobra,dir,operarios,fechas,horasStr,trabajos,materiales){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+  const W=210,PL=20,PR=20,CW=W-PL-PR;
+  let y=0;
+
+  // Header
+  doc.setFillColor(26,22,18);doc.rect(0,0,W,22,"F");
+  doc.setTextColor(255,255,255);doc.setFontSize(14);doc.setFont("helvetica","bold");
+  doc.text("RIBASESEDOS — Parte de Trabajo",PL,10);
+  doc.setFontSize(8);doc.setFont("helvetica","normal");
+  doc.text(new Date().toLocaleDateString("es-ES"),W-PR,16,{align:"right"});
+  y=32;
+
+  // Línea separadora dorada
+  doc.setDrawColor(201,168,76);doc.setLineWidth(0.5);doc.line(PL,y-4,W-PR,y-4);
+
+  function addField(label, value){
+    if(!value)return;
+    if(y>270){doc.addPage();y=20;}
+    doc.setTextColor(122,110,95);doc.setFontSize(8);doc.setFont("helvetica","bold");
+    doc.text(label.toUpperCase()+":",PL,y);
+    doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","normal");
+    const lines=doc.splitTextToSize(value,CW);
+    lines.forEach((l,i)=>{
+      if(i>0&&y>270){doc.addPage();y=20;}
+      doc.text(l,PL+(i===0?28:0),y+(i===0?0:5));
+      if(i>0)y+=5;
+    });
+    y+=8;
+  }
+
+  function addSection(title, text){
+    if(!text)return;
+    if(y>260){doc.addPage();y=20;}
+    // Cabecera sección
+    doc.setFillColor(238,233,223);doc.rect(PL,y-4,CW,8,"F");
+    doc.setDrawColor(201,168,76);doc.setLineWidth(0.8);doc.line(PL,y-4,PL,y+4);
+    doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","bold");
+    doc.text(title,PL+4,y+1);
+    y+=10;
+    doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(40,35,30);
+    const lines=doc.splitTextToSize(text,CW);
+    lines.forEach(l=>{
+      if(y>270){doc.addPage();y=20;}
+      doc.text(l,PL,y);y+=5.5;
+    });
+    y+=6;
+  }
+
+  addField("Cliente",obraName+(subobra?" — "+subobra:""));
+  addField("Dirección",dir);
+  addField("Operarios",operarios);
+
+  // Fechas en vertical + horas desglosadas
+  const fechasList=fechas.split(" y ");
+  if(y>260){doc.addPage();y=20;}
+  doc.setTextColor(122,110,95);doc.setFontSize(8);doc.setFont("helvetica","bold");
+  doc.text("FECHAS Y HORAS:",PL,y);
+  y+=6;
+  doc.setTextColor(26,22,18);doc.setFontSize(9);doc.setFont("helvetica","normal");
+  // Extraer desglose por día del horasStr
+  const partes=horasStr.split(" — ");
+  const totalPart=partes[0]||horasStr;
+  const detalleParts=partes[1]?partes[1].split(" + "):[];
+  fechasList.forEach((f,i)=>{
+    if(y>270){doc.addPage();y=20;}
+    const detalle=detalleParts[i]||"";
+    doc.text("• "+f+(detalle?" · "+detalle:""),PL+4,y);
+    y+=5.5;
+  });
+  doc.setFont("helvetica","bold");doc.setTextColor(168,134,58);
+  doc.text("Total: "+totalPart,PL+4,y);
+  y+=9;
+  doc.setFont("helvetica","normal");doc.setTextColor(26,22,18);
+
+  addSection("Trabajos realizados",trabajos);
+  addSection("Materiales utilizados",materiales);
+
+  // Footer
+  if(y>270){doc.addPage();y=20;}
+  doc.setDrawColor(238,233,223);doc.setLineWidth(0.5);doc.line(PL,y+4,W-PR,y+4);
+  doc.setTextColor(181,168,152);doc.setFontSize(8);doc.setFont("helvetica","normal");
+  doc.text("Ribasesedos · Grup Ese Dos",PL,y+10);
+  doc.text("Generado: "+new Date().toLocaleString("es-ES"),W-PR,y+10,{align:"right"});
+
+  mostrarPDF(doc.output("blob"),"Parte "+obraName);
+}
+
+function generarJsPDF(obraName,subobra,dir,trabajos,materiales,entries,fechaIni,fechaFin,total,festivos){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+  const W=210,PL=15,PR=15,CW=W-PL-PR;
+  let y=0;
+
+  // Header negro
+  doc.setFillColor(26,22,18);
+  doc.rect(0,0,W,22,"F");
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(14);doc.setFont("helvetica","bold");
+  doc.text("RIBASESEDOS · "+obraName+(subobra?" · "+subobra:""),PL,10);
+  doc.setFontSize(8);doc.setFont("helvetica","normal");
+  doc.text("Parte de trabajo"+(dir?" · "+dir:""),PL,16);
+  doc.text(new Date().toLocaleDateString("es-ES"),W-PR,16,{align:"right"});
+  y=28;
+
+  // Infobox
+  doc.setFillColor(245,240,232);
+  doc.roundedRect(PL,y,CW,18,2,2,"F");
+  doc.setTextColor(122,110,95);doc.setFontSize(7);doc.setFont("helvetica","bold");
+  const cols=subobra?4:3;
+  const cw=CW/cols;
+  const labels=["OBRA","PERÍODO","TOTAL HORAS"];
+  const vals=[obraName,fechaIni+" → "+fechaFin,total+"h"];
+  if(subobra){labels.splice(1,0,"PARTIDA");vals.splice(1,0,subobra);}
+  labels.forEach((l,i)=>{
+    doc.text(l,PL+cw*i+3,y+5);
+    doc.setTextColor(26,22,18);doc.setFontSize(i===(subobra?2:2)?10:9);doc.setFont("helvetica","bold");
+    if(i===labels.indexOf("TOTAL HORAS")){doc.setTextColor(168,134,58);}
+    doc.text(vals[i],PL+cw*i+3,y+12);
+    doc.setTextColor(122,110,95);doc.setFontSize(7);doc.setFont("helvetica","bold");
+  });
+  if(dir){
+    y+=20;
+    doc.setFillColor(245,240,232);
+    doc.roundedRect(PL,y,CW,10,2,2,"F");
+    doc.setTextColor(122,110,95);doc.setFontSize(7);doc.setFont("helvetica","bold");
+    doc.text("DIRECCIÓN",PL+3,y+4);
+    doc.setTextColor(26,22,18);doc.setFontSize(9);doc.setFont("helvetica","normal");
+    doc.text(dir,PL+3,y+9);
+  }
+  y+=22;
+
+  // Trabajos y materiales
+  function textBlock(title,text){
+    if(!text)return;
+    doc.setFillColor(238,233,223);
+    doc.rect(PL,y,4,7,"F");
+    doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","bold");
+    doc.text(title,PL+7,y+5);
+    y+=9;
+    const lines=doc.splitTextToSize(text,CW);
+    doc.setFontSize(9);doc.setFont("helvetica","normal");
+    doc.setTextColor(60,50,40);
+    lines.forEach(l=>{
+      if(y>270){doc.addPage();y=15;}
+      doc.text(l,PL,y);y+=5;
+    });
+    y+=4;
+  }
+  textBlock("Trabajos realizados",trabajos);
+  textBlock("Materiales utilizados",materiales);
+
+  // Tabla por trabajador
+  const grouped={};
+  entries.forEach(e=>{if(!grouped[e.trabajador])grouped[e.trabajador]=[];grouped[e.trabajador].push(e);});
+  Object.entries(grouped).forEach(([w,es])=>{
+    if(y>250){doc.addPage();y=15;}
+    const wTotal=es.reduce((s,e)=>s+e.horas,0);
+    // Cabecera trabajador
+    doc.setFillColor(238,233,223);
+    doc.rect(PL,y,CW,8,"F");
+    doc.setDrawColor(201,168,76);doc.setLineWidth(0.8);
+    doc.line(PL,y,PL,y+8);
+    doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","bold");
+    doc.text(nombrePDF(w),PL+5,y+5.5);
+    doc.setTextColor(122,110,95);doc.setFontSize(8);doc.setFont("helvetica","normal");
+    doc.text(wTotal+"h · "+es.length+" parte"+(es.length!==1?"s":""),W-PR,y+5.5,{align:"right"});
+    y+=8;
+    const rows=[...es].sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>[
+      e.fecha,
+      e.horas+"h",
+      getHT(e,festivos)==="n"?"Normal":getHT(e,festivos)==="e"?"Extra":getHT(e,festivos)==="f"?"Festivo":"Sábado",
+      e.notas||"—"
+    ]);
+    doc.autoTable({
+      startY:y,head:[["Fecha","Horas","Tipo","Notas"]],body:rows,
+      margin:{left:PL,right:PR},
+      styles:{fontSize:9,cellPadding:2.5,textColor:[26,22,18]},
+      headStyles:{fillColor:[245,240,232],textColor:[122,110,95],fontStyle:"bold",fontSize:8},
+      alternateRowStyles:{fillColor:[250,248,243]},
+      tableLineColor:[238,233,223],tableLineWidth:0.1,
+    });
+    y=doc.lastAutoTable.finalY+6;
+  });
+
+  // Total
+  if(y>260){doc.addPage();y=15;}
+  doc.setFillColor(245,240,232);
+  doc.rect(PL,y,CW,8,"F");
+  doc.setDrawColor(201,168,76);doc.setLineWidth(1);
+  doc.line(PL,y,W-PR,y);
+  doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","bold");
+  doc.text("TOTAL HORAS",PL+3,y+5.5);
+  doc.setTextColor(168,134,58);doc.setFontSize(12);
+  doc.text(total+"h",W-PR,y+5.5,{align:"right"});
+  y+=14;
+
+  // Footer
+  doc.setTextColor(181,168,152);doc.setFontSize(8);doc.setFont("helvetica","normal");
+  doc.text("Ribasesedos · Grup Ese Dos",PL,y);
+  doc.text("Generado: "+new Date().toLocaleString("es-ES"),W-PR,y,{align:"right"});
+
+  // Abrir PDF en nueva pestaña / Safari lo muestra inline
+  const pdfBlob=doc.output("blob");
+  mostrarPDF(pdfBlob, "Parte "+obraName+(subobra?" · "+subobra:""));
+}
+
+// ─── INITIAL DATA ─────────────────────────────────────────────────────────────
+const INITIAL_DATA=[
+  {"id":1,"fecha":"2025-12-31","trabajador":"Carlos Camacho","horas":6.0,"obra":"Exea","notas":""},
+  {"id":2,"fecha":"2025-12-29","trabajador":"Gustavo","horas":9.0,"obra":"Exea","notas":""},
+  {"id":3,"fecha":"2025-12-30","trabajador":"Gustavo","horas":9.0,"obra":"Exea","notas":""},
+  {"id":4,"fecha":"2025-12-31","trabajador":"Gustavo","horas":6.0,"obra":"Exea","notas":""},
+  {"id":5,"fecha":"2026-01-07","trabajador":"Txema","horas":9.0,"obra":"Exea","notas":""},
+  {"id":6,"fecha":"2026-01-07","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":7,"fecha":"2026-01-07","trabajador":"Carlos Camacho","horas":9.0,"obra":"Exea","notas":""},
+  {"id":8,"fecha":"2026-01-07","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":9,"fecha":"2025-12-17","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":10,"fecha":"2025-12-18","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":11,"fecha":"2025-12-19","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":12,"fecha":"2025-12-20","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":13,"fecha":"2025-12-22","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":14,"fecha":"2025-12-23","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":15,"fecha":"2025-12-24","trabajador":"Paco Ortega","horas":2.0,"obra":"Isdin","notas":""},
+  {"id":16,"fecha":"2026-01-07","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":17,"fecha":"2026-01-07","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":18,"fecha":"2026-01-07","trabajador":"Manja","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":19,"fecha":"2026-01-08","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":20,"fecha":"2026-01-08","trabajador":"Manja","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":21,"fecha":"2026-01-08","trabajador":"Txema","horas":6.0,"obra":"Exea","notas":""},
+  {"id":22,"fecha":"2026-01-08","trabajador":"Txema","horas":3.0,"obra":"Azul Acocsa","notas":""},
+  {"id":23,"fecha":"2026-01-08","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":24,"fecha":"2026-01-09","trabajador":"Javi ESE2","horas":6.0,"obra":"Av. Diagonal","notas":""},
+  {"id":25,"fecha":"2026-01-08","trabajador":"Carlos Camacho","horas":6.0,"obra":"Exea","notas":""},
+  {"id":26,"fecha":"2026-01-08","trabajador":"Carlos Camacho","horas":3.0,"obra":"Azul Acocsa","notas":""},
+  {"id":27,"fecha":"2026-01-09","trabajador":"Carlos Camacho","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":28,"fecha":"2026-01-09","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":29,"fecha":"2026-01-09","trabajador":"Manja","horas":2.0,"obra":"Av. Diagonal","notas":""},
+  {"id":30,"fecha":"2026-01-09","trabajador":"Manja","horas":4.0,"obra":"Major de Sarrià","notas":""},
+  {"id":31,"fecha":"2026-01-09","trabajador":"Txema","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":32,"fecha":"2026-01-08","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":33,"fecha":"2026-01-09","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":34,"fecha":"2026-01-09","trabajador":"JCM","horas":3.0,"obra":"Exea","notas":""},
+  {"id":35,"fecha":"2026-01-12","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":36,"fecha":"2026-01-12","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":37,"fecha":"2026-01-12","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":38,"fecha":"2026-01-12","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":39,"fecha":"2026-01-08","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":40,"fecha":"2026-01-09","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":41,"fecha":"2026-01-12","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":42,"fecha":"2026-01-10","trabajador":"Paco Ortega","horas":8.0,"obra":"Isdin","notas":""},
+  {"id":43,"fecha":"2026-01-07","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":44,"fecha":"2026-01-08","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":45,"fecha":"2026-01-09","trabajador":"Gustavo","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":46,"fecha":"2026-01-10","trabajador":"Gustavo","horas":8.0,"obra":"Isdin","notas":""},
+  {"id":47,"fecha":"2026-01-12","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":48,"fecha":"2026-01-13","trabajador":"Manja","horas":8.0,"obra":"Av. Diagonal","notas":""},
+  {"id":49,"fecha":"2026-01-13","trabajador":"Jimmy Jazz S2","horas":8.0,"obra":"Azul Acocsa","notas":""},
+  {"id":50,"fecha":"2026-01-13","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":51,"fecha":"2026-01-13","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":52,"fecha":"2026-01-13","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":53,"fecha":"2026-01-12","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":54,"fecha":"2026-01-13","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":55,"fecha":"2026-01-13","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":56,"fecha":"2026-01-14","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":57,"fecha":"2026-01-14","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":58,"fecha":"2026-01-14","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":59,"fecha":"2026-01-14","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":60,"fecha":"2026-01-14","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":61,"fecha":"2026-01-12","trabajador":"Gustavo","horas":8.0,"obra":"Carlos Martínez","notas":""},
+  {"id":62,"fecha":"2026-01-13","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":63,"fecha":"2026-01-14","trabajador":"Gustavo","horas":8.0,"obra":"Alma","notas":""},
+  {"id":64,"fecha":"2026-01-14","trabajador":"Txema","horas":8.0,"obra":"Alma","notas":""},
+  {"id":65,"fecha":"2026-01-15","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":66,"fecha":"2026-01-15","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":67,"fecha":"2026-01-15","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":68,"fecha":"2026-01-15","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":69,"fecha":"2026-01-15","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":70,"fecha":"2026-01-15","trabajador":"JCM","horas":3.0,"obra":"Azul Acocsa","notas":""},
+  {"id":71,"fecha":"2026-01-15","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":72,"fecha":"2026-01-14","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":73,"fecha":"2026-01-15","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":74,"fecha":"2026-01-16","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":75,"fecha":"2026-01-16","trabajador":"Carlos Camacho","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":76,"fecha":"2026-01-16","trabajador":"Carlos Camacho","horas":4.0,"obra":"Isdin","notas":""},
+  {"id":77,"fecha":"2026-01-16","trabajador":"Javi ESE2","horas":6.0,"obra":"Av. Diagonal","notas":""},
+  {"id":78,"fecha":"2026-01-16","trabajador":"Javi ESE2","horas":3.0,"obra":"Isdin","notas":""},
+  {"id":79,"fecha":"2026-01-16","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":80,"fecha":"2026-01-16","trabajador":"JCM","horas":3.0,"obra":"Isdin","notas":""},
+  {"id":81,"fecha":"2026-01-16","trabajador":"Txema","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":82,"fecha":"2026-01-16","trabajador":"Jimmy Jazz S2","horas":8.0,"obra":"Azul Acocsa","notas":""},
+  {"id":83,"fecha":"2026-01-17","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":84,"fecha":"2026-01-17","trabajador":"Javi ESE2","horas":6.0,"obra":"Isdin","notas":""},
+  {"id":85,"fecha":"2026-01-17","trabajador":"Carlos Camacho","horas":6.0,"obra":"Isdin","notas":""},
+  {"id":86,"fecha":"2026-01-17","trabajador":"JCM","horas":6.0,"obra":"Isdin","notas":""},
+  {"id":87,"fecha":"2026-01-16","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":88,"fecha":"2026-01-17","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":89,"fecha":"2026-01-19","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":90,"fecha":"2026-01-19","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":91,"fecha":"2026-01-19","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":92,"fecha":"2026-01-19","trabajador":"JCM","horas":8.0,"obra":"Escola Lurdes","notas":""},
+  {"id":93,"fecha":"2026-01-19","trabajador":"Carlos Camacho","horas":8.0,"obra":"Escola Lurdes","notas":""},
+  {"id":94,"fecha":"2026-01-19","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":95,"fecha":"2026-01-19","trabajador":"Paco Ortega","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":96,"fecha":"2026-01-19","trabajador":"Paco Ortega","horas":5.0,"obra":"Vilasar","notas":""},
+  {"id":97,"fecha":"2026-01-19","trabajador":"Paco Ortega","horas":3.0,"obra":"Lámpara","notas":""},
+  {"id":98,"fecha":"2026-01-20","trabajador":"Txema","horas":4.0,"obra":"Azul Acocsa","notas":""},
+  {"id":99,"fecha":"2026-01-20","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":100,"fecha":"2026-01-20","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":101,"fecha":"2026-01-20","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":102,"fecha":"2026-01-20","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":103,"fecha":"2026-01-20","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":104,"fecha":"2026-01-20","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":105,"fecha":"2026-01-21","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":106,"fecha":"2026-01-21","trabajador":"Javi ESE2","horas":1.0,"obra":"Av. Diagonal","notas":""},
+  {"id":107,"fecha":"2026-01-21","trabajador":"Javi ESE2","horas":8.0,"obra":"Manuel Girona","notas":""},
+  {"id":108,"fecha":"2026-01-21","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":109,"fecha":"2026-01-21","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":110,"fecha":"2026-01-22","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":111,"fecha":"2026-01-22","trabajador":"Javi ESE2","horas":8.0,"obra":"Manuel Girona","notas":""},
+  {"id":112,"fecha":"2026-01-22","trabajador":"Javi ESE2","horas":1.0,"obra":"Can Ros","notas":""},
+  {"id":113,"fecha":"2026-01-22","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":114,"fecha":"2026-01-21","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":115,"fecha":"2026-01-22","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":116,"fecha":"2026-01-15","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":117,"fecha":"2026-01-16","trabajador":"Gustavo","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":118,"fecha":"2026-01-23","trabajador":"Gustavo","horas":6.0,"obra":"Jaleo","notas":""},
+  {"id":119,"fecha":"2026-01-19","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":120,"fecha":"2026-01-20","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":121,"fecha":"2026-01-21","trabajador":"Gustavo","horas":7.0,"obra":"Vilasar","notas":""},
+  {"id":122,"fecha":"2026-01-21","trabajador":"Gustavo","horas":1.0,"obra":"Carlos Martínez","notas":""},
+  {"id":123,"fecha":"2026-01-22","trabajador":"Gustavo","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":124,"fecha":"2026-01-22","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":125,"fecha":"2026-01-23","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":126,"fecha":"2026-01-21","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":127,"fecha":"2026-01-21","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":129,"fecha":"2026-01-23","trabajador":"Gustavo","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":130,"fecha":"2026-01-23","trabajador":"Gustavo","horas":3.0,"obra":"Can Ros","notas":""},
+  {"id":131,"fecha":"2026-01-23","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":132,"fecha":"2026-01-23","trabajador":"JCM","horas":3.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":133,"fecha":"2026-01-23","trabajador":"Javi ESE2","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":134,"fecha":"2026-01-23","trabajador":"Javi ESE2","horas":3.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":135,"fecha":"2026-01-23","trabajador":"Carlos Camacho","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":136,"fecha":"2026-01-23","trabajador":"Txema","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":137,"fecha":"2026-01-23","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":138,"fecha":"2026-01-24","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":139,"fecha":"2026-01-24","trabajador":"Txema","horas":9.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":140,"fecha":"2026-01-24","trabajador":"Carlos Camacho","horas":9.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":141,"fecha":"2026-01-24","trabajador":"Manja","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":142,"fecha":"2026-01-24","trabajador":"Javi ESE2","horas":9.0,"obra":"Exea","notas":"","subobra":"Leds"},
+  {"id":143,"fecha":"2026-01-26","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":144,"fecha":"2026-01-26","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":145,"fecha":"2026-01-26","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":146,"fecha":"2026-01-26","trabajador":"JCM","horas":9.0,"obra":"Escola Lurdes","notas":""},
+  {"id":147,"fecha":"2026-01-26","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":148,"fecha":"2026-01-26","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":149,"fecha":"2026-01-27","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":150,"fecha":"2026-01-27","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":151,"fecha":"2026-01-27","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":152,"fecha":"2026-01-27","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":153,"fecha":"2026-01-27","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":154,"fecha":"2026-01-27","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":155,"fecha":"2026-01-27","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":156,"fecha":"2026-01-27","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":157,"fecha":"2026-01-27","trabajador":"Paco Ortega","horas":3.0,"obra":"Isdin","notas":""},
+  {"id":158,"fecha":"2026-01-28","trabajador":"Paco Ortega","horas":9.0,"obra":"Isdin","notas":""},
+  {"id":159,"fecha":"2026-01-28","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":160,"fecha":"2026-01-28","trabajador":"Javi ESE2","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":161,"fecha":"2026-01-28","trabajador":"Carlos Camacho","horas":9.0,"obra":"Isdin","notas":""},
+  {"id":162,"fecha":"2026-01-28","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":163,"fecha":"2026-01-28","trabajador":"Manja","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":164,"fecha":"2026-01-28","trabajador":"Txema","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":165,"fecha":"2026-01-29","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":166,"fecha":"2026-01-29","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":167,"fecha":"2026-01-29","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":168,"fecha":"2026-01-29","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":169,"fecha":"2026-01-29","trabajador":"Manja","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":170,"fecha":"2026-01-29","trabajador":"Manja","horas":3.0,"obra":"Santaló","notas":""},
+  {"id":171,"fecha":"2026-01-29","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":172,"fecha":"2026-01-29","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":173,"fecha":"2026-01-30","trabajador":"Javi ESE2","horas":6.0,"obra":"Manuel Girona","notas":""},
+  {"id":174,"fecha":"2026-01-30","trabajador":"Javi ESE2","horas":3.0,"obra":"Can Ros","notas":""},
+  {"id":175,"fecha":"2026-01-30","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":176,"fecha":"2026-01-30","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":177,"fecha":"2026-01-30","trabajador":"Manja","horas":6.0,"obra":"Manuel Girona","notas":""},
+  {"id":178,"fecha":"2026-01-30","trabajador":"Manja","horas":3.0,"obra":"Can Ros","notas":""},
+  {"id":179,"fecha":"2026-01-30","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":180,"fecha":"2026-01-30","trabajador":"Carlos Camacho","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":181,"fecha":"2026-02-02","trabajador":"Javi ESE2","horas":9.0,"obra":"Cassoles","notas":""},
+  {"id":182,"fecha":"2026-02-02","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":183,"fecha":"2026-02-02","trabajador":"Paco Ortega","horas":4.0,"obra":"Lámpara","notas":""},
+  {"id":184,"fecha":"2026-02-02","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":185,"fecha":"2026-02-02","trabajador":"JCM","horas":4.0,"obra":"Llum BCN","notas":""},
+  {"id":186,"fecha":"2026-02-02","trabajador":"Manja","horas":2.0,"obra":"Can Ros","notas":""},
+  {"id":187,"fecha":"2026-02-02","trabajador":"Manja","horas":7.0,"obra":"Cassoles","notas":""},
+  {"id":188,"fecha":"2026-02-02","trabajador":"Txema","horas":6.0,"obra":"Cassoles","notas":""},
+  {"id":189,"fecha":"2026-02-02","trabajador":"Txema","horas":4.0,"obra":"Llum BCN","notas":""},
+  {"id":190,"fecha":"2026-02-02","trabajador":"Carlos Camacho","horas":6.0,"obra":"Cassoles","notas":""},
+  {"id":191,"fecha":"2026-02-02","trabajador":"Carlos Camacho","horas":4.0,"obra":"Llum BCN","notas":""},
+  {"id":192,"fecha":"2026-02-03","trabajador":"Manja","horas":12.0,"obra":"Can Ros","notas":""},
+  {"id":193,"fecha":"2026-02-03","trabajador":"Txema","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":194,"fecha":"2026-02-03","trabajador":"JCM","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":195,"fecha":"2026-02-03","trabajador":"Carlos Camacho","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":196,"fecha":"2026-02-04","trabajador":"Jimmy Jazz S2","horas":11.0,"obra":"Can Ros","notas":""},
+  {"id":197,"fecha":"2026-02-03","trabajador":"Javi ESE2","horas":5.0,"obra":"Cassoles","notas":""},
+  {"id":198,"fecha":"2026-02-03","trabajador":"Javi ESE2","horas":7.0,"obra":"Can Ros","notas":""},
+  {"id":199,"fecha":"2026-02-04","trabajador":"Javi ESE2","horas":11.0,"obra":"Can Ros","notas":""},
+  {"id":200,"fecha":"2026-02-04","trabajador":"Txema","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":201,"fecha":"2026-02-04","trabajador":"Manja","horas":8.0,"obra":"Ferran Agulló","notas":""},
+  {"id":202,"fecha":"2026-02-04","trabajador":"Manja","horas":2.0,"obra":"Can Ros","notas":""},
+  {"id":203,"fecha":"2026-02-04","trabajador":"JCM","horas":9.0,"obra":"Isdin","notas":""},
+  {"id":204,"fecha":"2026-02-04","trabajador":"JCM","horas":4.0,"obra":"Llum BCN","notas":""},
+  {"id":205,"fecha":"2026-02-04","trabajador":"Carlos Camacho","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":206,"fecha":"2026-01-24","trabajador":"Gustavo","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":207,"fecha":"2026-01-26","trabajador":"Gustavo","horas":2.0,"obra":"Vilasar","notas":""},
+  {"id":208,"fecha":"2026-01-26","trabajador":"Gustavo","horas":4.0,"obra":"Erica Iglesia","notas":""},
+  {"id":209,"fecha":"2026-01-27","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":210,"fecha":"2026-01-28","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":211,"fecha":"2026-01-29","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":212,"fecha":"2026-01-30","trabajador":"Gustavo","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":213,"fecha":"2026-01-31","trabajador":"Gustavo","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":214,"fecha":"2026-02-02","trabajador":"Gustavo","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":215,"fecha":"2026-02-02","trabajador":"Gustavo","horas":4.0,"obra":"Llum BCN","notas":""},
+  {"id":216,"fecha":"2026-02-03","trabajador":"Gustavo","horas":11.0,"obra":"Llum BCN","notas":""},
+  {"id":217,"fecha":"2026-02-04","trabajador":"Gustavo","horas":13.0,"obra":"Llum BCN","notas":""},
+  {"id":218,"fecha":"2026-02-05","trabajador":"Javi ESE2","horas":7.0,"obra":"Can Ros","notas":""},
+  {"id":219,"fecha":"2026-02-05","trabajador":"Javi ESE2","horas":2.0,"obra":"Cassoles","notas":""},
+  {"id":220,"fecha":"2026-02-05","trabajador":"Jimmy Jazz S2","horas":8.0,"obra":"Azul Acocsa","notas":""},
+  {"id":221,"fecha":"2026-02-05","trabajador":"Jimmy Jazz S2","horas":1.0,"obra":"Cassoles","notas":""},
+  {"id":222,"fecha":"2026-02-05","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":223,"fecha":"2026-02-03","trabajador":"Paco Ortega","horas":12.0,"obra":"Llum BCN","notas":""},
+  {"id":224,"fecha":"2026-02-04","trabajador":"Paco Ortega","horas":14.0,"obra":"Llum BCN","notas":""},
+  {"id":225,"fecha":"2026-02-05","trabajador":"Paco Ortega","horas":7.0,"obra":"Llum BCN","notas":""},
+  {"id":226,"fecha":"2026-02-05","trabajador":"Paco Ortega","horas":2.0,"obra":"Transporte Mat.","notas":""},
+  {"id":227,"fecha":"2026-02-05","trabajador":"Manja","horas":12.0,"obra":"Can Ros","notas":""},
+  {"id":228,"fecha":"2026-02-05","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":229,"fecha":"2026-02-05","trabajador":"Gustavo","horas":9.0,"obra":"Can Ros","notas":""},
+  {"id":230,"fecha":"2026-02-06","trabajador":"Txema","horas":6.0,"obra":"Cassoles","notas":""},
+  {"id":231,"fecha":"2026-02-05","trabajador":"Javi ESE2","horas":4.0,"obra":"Cassoles","notas":""},
+  {"id":232,"fecha":"2026-02-06","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Cassoles","notas":""},
+  {"id":233,"fecha":"2026-02-06","trabajador":"Carlos Camacho","horas":6.0,"obra":"Cassoles","notas":""},
+  {"id":234,"fecha":"2026-02-06","trabajador":"Manja","horas":5.0,"obra":"Ferran Agulló","notas":""},
+  {"id":235,"fecha":"2026-02-06","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":236,"fecha":"2026-02-06","trabajador":"JCM","horas":2.0,"obra":"Llum BCN","notas":""},
+  {"id":237,"fecha":"2026-02-09","trabajador":"Manja","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":238,"fecha":"2026-02-09","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Cassoles","notas":""},
+  {"id":239,"fecha":"2026-02-08","trabajador":"JCM","horas":5.0,"obra":"Llum BCN","notas":""},
+  {"id":240,"fecha":"2026-02-09","trabajador":"JCM","horas":7.0,"obra":"Exea","notas":""},
+  {"id":241,"fecha":"2026-02-09","trabajador":"Javi ESE2","horas":9.0,"obra":"Cassoles","notas":""},
+  {"id":242,"fecha":"2026-02-08","trabajador":"Carlos Camacho","horas":5.0,"obra":"Llum BCN","notas":""},
+  {"id":243,"fecha":"2026-02-09","trabajador":"Carlos Camacho","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":244,"fecha":"2026-02-06","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":245,"fecha":"2026-02-08","trabajador":"Paco Ortega","horas":5.0,"obra":"Llum BCN","notas":""},
+  {"id":246,"fecha":"2026-02-09","trabajador":"Paco Ortega","horas":4.0,"obra":"Transporte Mat.","notas":""},
+  {"id":247,"fecha":"2026-02-08","trabajador":"Txema","horas":5.0,"obra":"Llum BCN","notas":""},
+  {"id":248,"fecha":"2026-02-09","trabajador":"Txema","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":249,"fecha":"2026-02-10","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":250,"fecha":"2026-02-10","trabajador":"Txema","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":251,"fecha":"2026-02-10","trabajador":"Paco Ortega","horas":8.0,"obra":"Sitges","notas":""},
+  {"id":252,"fecha":"2026-02-10","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":253,"fecha":"2026-02-10","trabajador":"Carlos Camacho","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":254,"fecha":"2026-02-10","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":255,"fecha":"2026-02-10","trabajador":"Manja","horas":1.0,"obra":"Santaló","notas":""},
+  {"id":256,"fecha":"2026-02-10","trabajador":"Manja","horas":8.0,"obra":"Ferran Agulló","notas":""},
+  {"id":257,"fecha":"2026-02-11","trabajador":"JCM","horas":7.0,"obra":"Exea","notas":""},
+  {"id":258,"fecha":"2026-02-11","trabajador":"JCM","horas":2.0,"obra":"Isdin","notas":""},
+  {"id":259,"fecha":"2026-02-11","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":260,"fecha":"2026-02-11","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":261,"fecha":"2026-02-11","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":262,"fecha":"2026-02-11","trabajador":"Manja","horas":6.0,"obra":"Can Ros","notas":""},
+  {"id":263,"fecha":"2026-02-11","trabajador":"Manja","horas":2.0,"obra":"Plaza de les Olles","notas":""},
+  {"id":264,"fecha":"2026-02-11","trabajador":"Javi ESE2","horas":1.0,"obra":"Santaló","notas":""},
+  {"id":265,"fecha":"2026-02-11","trabajador":"Javi ESE2","horas":3.0,"obra":"Cassoles","notas":""},
+  {"id":266,"fecha":"2026-02-12","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":267,"fecha":"2026-02-12","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":268,"fecha":"2026-02-12","trabajador":"Jimmy Jazz S2","horas":4.0,"obra":"Santaló","notas":""},
+  {"id":269,"fecha":"2026-02-12","trabajador":"Carlos Camacho","horas":4.0,"obra":"Azul Acocsa","notas":""},
+  {"id":270,"fecha":"2026-02-12","trabajador":"Carlos Camacho","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":271,"fecha":"2026-02-11","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":272,"fecha":"2026-02-12","trabajador":"Paco Ortega","horas":2.0,"obra":"Can Ros","notas":""},
+  {"id":273,"fecha":"2026-02-12","trabajador":"Paco Ortega","horas":4.0,"obra":"Hotel Sixtytwo","notas":""},
+  {"id":274,"fecha":"2026-02-12","trabajador":"Paco Ortega","horas":2.0,"obra":"Transporte Mat.","notas":""},
+  {"id":275,"fecha":"2026-02-12","trabajador":"Manja","horas":2.0,"obra":"Can Ros","notas":""},
+  {"id":276,"fecha":"2026-02-12","trabajador":"Manja","horas":4.0,"obra":"Hotel Sixtytwo","notas":""},
+  {"id":277,"fecha":"2026-02-12","trabajador":"Manja","horas":2.0,"obra":"Transporte Mat.","notas":""},
+  {"id":278,"fecha":"2026-02-13","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":279,"fecha":"2026-02-13","trabajador":"Javi ESE2","horas":2.0,"obra":"Santaló","notas":""},
+  {"id":280,"fecha":"2026-02-13","trabajador":"Javi ESE2","horas":5.0,"obra":"Manuel Girona","notas":""},
+  {"id":281,"fecha":"2026-02-13","trabajador":"JCM","horas":6.0,"obra":"Isdin","notas":""},
+  {"id":282,"fecha":"2026-02-13","trabajador":"JCM","horas":3.0,"obra":"Exea","notas":"","subobra":"Vestíbulo"},
+  {"id":283,"fecha":"2026-02-13","trabajador":"Carlos Camacho","horas":6.0,"obra":"Isdin","notas":""},
+  {"id":284,"fecha":"2026-02-13","trabajador":"Carlos Camacho","horas":3.0,"obra":"Exea","notas":"","subobra":"Vestíbulo"},
+  {"id":285,"fecha":"2026-02-13","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":286,"fecha":"2026-02-14","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":287,"fecha":"2026-02-14","trabajador":"JCM","horas":10.0,"obra":"Exea","notas":"","subobra":"Vestíbulo"},
+  {"id":288,"fecha":"2026-02-14","trabajador":"Paco Ortega","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":289,"fecha":"2026-02-14","trabajador":"Javi ESE2","horas":10.0,"obra":"Exea","notas":"","subobra":"Vestíbulo"},
+  {"id":290,"fecha":"2026-02-16","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":291,"fecha":"2026-02-16","trabajador":"Javi ESE2","horas":1.0,"obra":"Av. Diagonal","notas":""},
+  {"id":292,"fecha":"2026-02-16","trabajador":"Javi ESE2","horas":8.0,"obra":"Santaló","notas":""},
+  {"id":293,"fecha":"2026-02-16","trabajador":"Carlos Camacho","horas":9.0,"obra":"Exea","notas":""},
+  {"id":294,"fecha":"2026-02-16","trabajador":"Txema","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":295,"fecha":"2026-02-16","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":296,"fecha":"2026-02-06","trabajador":"Gustavo","horas":1.0,"obra":"Llum BCN","notas":""},
+  {"id":297,"fecha":"2026-02-09","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":298,"fecha":"2026-02-17","trabajador":"Txema","horas":4.0,"obra":"Santaló","notas":""},
+  {"id":299,"fecha":"2026-02-17","trabajador":"Txema","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":300,"fecha":"2026-02-10","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":301,"fecha":"2026-02-11","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":302,"fecha":"2026-02-17","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":303,"fecha":"2026-02-17","trabajador":"Jimmy Jazz S2","horas":4.0,"obra":"Azul Acocsa","notas":""},
+  {"id":304,"fecha":"2026-02-13","trabajador":"Gustavo","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":305,"fecha":"2026-02-16","trabajador":"Gustavo","horas":3.0,"obra":"Vilasar","notas":""},
+  {"id":306,"fecha":"2026-02-17","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":307,"fecha":"2026-02-17","trabajador":"Carlos Camacho","horas":4.0,"obra":"Santaló","notas":""},
+  {"id":308,"fecha":"2026-02-17","trabajador":"Carlos Camacho","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":309,"fecha":"2026-02-17","trabajador":"Javi ESE2","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":310,"fecha":"2026-02-17","trabajador":"Javi ESE2","horas":3.0,"obra":"Cassoles","notas":""},
+  {"id":311,"fecha":"2026-02-16","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":312,"fecha":"2026-02-17","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":313,"fecha":"2026-02-17","trabajador":"Manja","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":314,"fecha":"2026-02-17","trabajador":"Manja","horas":3.0,"obra":"Cassoles","notas":""},
+  {"id":315,"fecha":"2026-02-17","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":316,"fecha":"2026-02-18","trabajador":"JCM","horas":4.0,"obra":"Alma","notas":""},
+  {"id":317,"fecha":"2026-02-18","trabajador":"JCM","horas":5.0,"obra":"Exea","notas":""},
+  {"id":318,"fecha":"2026-02-18","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":319,"fecha":"2026-02-18","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":320,"fecha":"2026-02-18","trabajador":"Manja","horas":7.0,"obra":"Santaló","notas":""},
+  {"id":321,"fecha":"2026-02-18","trabajador":"Manja","horas":2.0,"obra":"Major de Sarrià","notas":""},
+  {"id":322,"fecha":"2026-02-18","trabajador":"Txema","horas":4.0,"obra":"Alma","notas":""},
+  {"id":323,"fecha":"2026-02-18","trabajador":"Txema","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":324,"fecha":"2026-02-18","trabajador":"Carlos Camacho","horas":4.0,"obra":"Alma","notas":""},
+  {"id":325,"fecha":"2026-02-18","trabajador":"Carlos Camacho","horas":5.0,"obra":"Azul Acocsa","notas":""},
+  {"id":326,"fecha":"2026-02-19","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":327,"fecha":"2026-02-18","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":328,"fecha":"2026-02-19","trabajador":"Paco Ortega","horas":6.0,"obra":"J. Hernando","notas":""},
+  {"id":329,"fecha":"2026-02-19","trabajador":"Paco Ortega","horas":2.0,"obra":"Transporte Mat.","notas":""},
+  {"id":330,"fecha":"2026-02-19","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":331,"fecha":"2026-02-19","trabajador":"Carlos Camacho","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":332,"fecha":"2026-02-20","trabajador":"Javi ESE2","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":333,"fecha":"2026-02-20","trabajador":"Manja","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":334,"fecha":"2026-02-20","trabajador":"Jimmy Jazz S2","horas":1.0,"obra":"Azul Acocsa","notas":""},
+  {"id":335,"fecha":"2026-02-20","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":336,"fecha":"2026-02-20","trabajador":"Carlos Camacho","horas":6.0,"obra":"Exea","notas":""},
+  {"id":337,"fecha":"2026-02-19","trabajador":"Txema","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":338,"fecha":"2026-02-19","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":339,"fecha":"2026-02-20","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":341,"fecha":"2026-02-23","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":342,"fecha":"2026-02-23","trabajador":"Manja","horas":3.0,"obra":"Abadessa Olzet","notas":""},
+  {"id":343,"fecha":"2026-02-23","trabajador":"Txema","horas":9.0,"obra":"Exea","notas":""},
+  {"id":344,"fecha":"2026-02-23","trabajador":"Carlos Camacho","horas":9.0,"obra":"Exea","notas":""},
+  {"id":345,"fecha":"2026-02-23","trabajador":"Jimmy Jazz S2","horas":3.0,"obra":"Abadessa Olzet","notas":""},
+  {"id":346,"fecha":"2026-02-23","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":347,"fecha":"2026-02-23","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":348,"fecha":"2026-02-18","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":349,"fecha":"2026-02-19","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":350,"fecha":"2026-02-21","trabajador":"Gustavo","horas":8.0,"obra":"Vilasar","notas":""},
+  {"id":351,"fecha":"2026-02-23","trabajador":"Gustavo","horas":9.0,"obra":"Vilasar","notas":""},
+  {"id":352,"fecha":"2026-02-20","trabajador":"Paco Ortega","horas":6.0,"obra":"Vilasar","notas":""},
+  {"id":353,"fecha":"2026-02-23","trabajador":"Paco Ortega","horas":9.0,"obra":"Sitges","notas":""},
+  {"id":354,"fecha":"2026-02-24","trabajador":"Jimmy Jazz S2","horas":4.0,"obra":"Cassoles","notas":""},
+  {"id":355,"fecha":"2026-02-24","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":356,"fecha":"2026-02-24","trabajador":"Javi ESE2","horas":4.0,"obra":"Cassoles","notas":""},
+  {"id":357,"fecha":"2026-02-24","trabajador":"Javi ESE2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":358,"fecha":"2026-02-24","trabajador":"Manja","horas":9.0,"obra":"Escola Lurdes","notas":""},
+  {"id":359,"fecha":"2026-02-24","trabajador":"Carlos Camacho","horas":8.0,"obra":"Exea","notas":""},
+  {"id":360,"fecha":"2026-02-25","trabajador":"Carlos Camacho","horas":8.0,"obra":"Azul Acocsa","notas":""},
+  {"id":361,"fecha":"2026-02-25","trabajador":"Jimmy Jazz S2","horas":1.0,"obra":"Santaló","notas":""},
+  {"id":362,"fecha":"2026-02-25","trabajador":"Jimmy Jazz S2","horas":7.0,"obra":"Azul Acocsa","notas":""},
+  {"id":363,"fecha":"2026-02-25","trabajador":"Javi ESE2","horas":1.0,"obra":"Manuel Girona","notas":""},
+  {"id":364,"fecha":"2026-02-25","trabajador":"Javi ESE2","horas":8.0,"obra":"Santaló","notas":""},
+  {"id":365,"fecha":"2026-02-25","trabajador":"Manja","horas":4.0,"obra":"Hotel Sixtytwo","notas":""},
+  {"id":366,"fecha":"2026-02-25","trabajador":"Manja","horas":5.0,"obra":"Escola Lurdes","notas":""},
+  {"id":367,"fecha":"2026-02-24","trabajador":"Txema","horas":8.0,"obra":"Exea","notas":""},
+  {"id":368,"fecha":"2026-02-25","trabajador":"Txema","horas":8.0,"obra":"Azul Acocsa","notas":""},
+  {"id":369,"fecha":"2026-02-26","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Escola Lurdes","notas":""},
+  {"id":378,"fecha":"2026-02-24","trabajador":"Gustavo","horas":9.0,"obra":"Vilassar","notas":""},
+  {"id":379,"fecha":"2026-02-25","trabajador":"Gustavo","horas":2.0,"obra":"Carles Riba 52","notas":""},
+  {"id":380,"fecha":"2026-02-25","trabajador":"Gustavo","horas":1.0,"obra":"Oficina Sant Cugat","notas":""},
+  {"id":381,"fecha":"2026-02-25","trabajador":"Gustavo","horas":5.0,"obra":"Vilassar","notas":""},
+  {"id":382,"fecha":"2026-02-26","trabajador":"Javi ESE2","horas":9.0,"obra":"Santaló","notas":""},
+  {"id":383,"fecha":"2026-02-26","trabajador":"Gustavo","horas":9.0,"obra":"Vilassar","notas":""},
+  {"id":384,"fecha":"2026-02-26","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":385,"fecha":"2026-02-26","trabajador":"Manja","horas":9.0,"obra":"Escola Lurdes","notas":""},
+  {"id":386,"fecha":"2026-02-26","trabajador":"Carlos Camacho","horas":6.0,"obra":"Exea","notas":""},
+  {"id":387,"fecha":"2026-02-26","trabajador":"Txema","horas":6.0,"obra":"Exea","notas":""},
+  {"id":388,"fecha":"2026-02-27","trabajador":"Manja","horas":6.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":389,"fecha":"2026-02-27","trabajador":"Jimmy Jazz S2","horas":5.0,"obra":"Santaló","notas":""},
+  {"id":390,"fecha":"2026-02-27","trabajador":"Jimmy Jazz S2","horas":1.0,"obra":"Materiales Diagonal 360","notas":""},
+  {"id":391,"fecha":"2026-02-27","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":392,"fecha":"2026-02-27","trabajador":"JCM","horas":3.0,"obra":"Exea","subobra":"Foscurit PT18","notas":""},
+  {"id":393,"fecha":"2026-02-27","trabajador":"Javi ESE2","horas":6.0,"obra":"Santaló","notas":""},
+  {"id":394,"fecha":"2026-02-27","trabajador":"Javi ESE2","horas":3.0,"obra":"Exea","subobra":"Foscurit PT18","notas":""},
+  {"id":395,"fecha":"2026-02-24","trabajador":"Paco Ortega","horas":7.0,"obra":"Vilassar","notas":""},
+  {"id":396,"fecha":"2026-02-25","trabajador":"Paco Ortega","horas":2.0,"obra":"Manuel Girona","notas":""},
+  {"id":397,"fecha":"2026-02-25","trabajador":"Paco Ortega","horas":4.0,"obra":"Hotel Sixtytwo","notas":""},
+  {"id":398,"fecha":"2026-02-25","trabajador":"Paco Ortega","horas":2.0,"obra":"Transporte Materiales","notas":""},
+  {"id":399,"fecha":"2026-02-26","trabajador":"Paco Ortega","horas":4.0,"obra":"Vilana","notas":""},
+  {"id":400,"fecha":"2026-02-27","trabajador":"Paco Ortega","horas":3.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":401,"fecha":"2026-02-27","trabajador":"Paco Ortega","horas":2.0,"obra":"Esperança","notas":""},
+  {"id":402,"fecha":"2026-02-27","trabajador":"Paco Ortega","horas":1.0,"obra":"Transporte Materiales","notas":""},
+  {"id":403,"fecha":"2026-02-28","trabajador":"Carlos Camacho","horas":7.0,"obra":"Exea","subobra":"Cables","notas":""},
+  {"id":404,"fecha":"2026-02-28","trabajador":"JCM","horas":3.0,"obra":"Exea","notas":""},
+  {"id":405,"fecha":"2026-02-28","trabajador":"JCM","horas":8.0,"obra":"Exea","subobra":"Foscurit PT18","notas":""},
+  {"id":406,"fecha":"2026-02-28","trabajador":"Javi ESE2","horas":3.0,"obra":"Exea","notas":""},
+  {"id":407,"fecha":"2026-02-28","trabajador":"Javi ESE2","horas":8.0,"obra":"Exea","subobra":"Foscurit PT18","notas":""},
+  {"id":408,"fecha":"2026-02-28","trabajador":"Txema","horas":7.0,"obra":"Exea","subobra":"Cables","notas":""},
+  {"id":409,"fecha":"2026-02-27","trabajador":"Gustavo","horas":5.0,"obra":"Carles Riba 52","notas":""},
+  {"id":410,"fecha":"2026-02-27","trabajador":"Gustavo","horas":1.0,"obra":"Carlos Martínez","notas":""},
+  {"id":411,"fecha":"2026-02-28","trabajador":"Gustavo","horas":8.0,"obra":"Exea","subobra":"Cables","notas":""},
+  {"id":412,"fecha":"2026-03-02","trabajador":"Gustavo","horas":9.0,"obra":"Carles Riba 52","notas":""},
+  {"id":413,"fecha":"2026-03-02","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":414,"fecha":"2026-03-02","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Diagonal 360","notas":""},
+  {"id":415,"fecha":"2026-03-02","trabajador":"Manja","horas":9.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":416,"fecha":"2026-03-02","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":417,"fecha":"2026-03-02","trabajador":"Carlos Camacho","horas":9.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":418,"fecha":"2026-03-02","trabajador":"Paco Ortega","horas":1.0,"obra":"ISDIN Provençals","notas":""},
+  {"id":419,"fecha":"2026-03-02","trabajador":"Paco Ortega","horas":8.0,"obra":"Vilassar","notas":""},
+  {"id":420,"fecha":"2026-03-03","trabajador":"Txema","horas":3.0,"obra":"Carles Riba 52","notas":""},
+  {"id":421,"fecha":"2026-03-03","trabajador":"Txema","horas":5.0,"obra":"Vilassar","notas":""},
+  {"id":422,"fecha":"2026-03-03","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Diagonal 360","notas":""},
+  {"id":423,"fecha":"2026-03-03","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":424,"fecha":"2026-03-03","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":425,"fecha":"2026-03-03","trabajador":"Carlos Camacho","horas":8.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":426,"fecha":"2026-03-03","trabajador":"Manja","horas":8.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":427,"fecha":"2026-03-03","trabajador":"Paco Ortega","horas":8.0,"obra":"Vilassar","notas":""},
+  {"id":428,"fecha":"2026-03-04","trabajador":"Javi ESE2","horas":9.0,"obra":"Av. Diagonal","notas":""},
+  {"id":429,"fecha":"2026-03-04","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Diagonal 360","notas":""},
+  {"id":430,"fecha":"2026-03-04","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":431,"fecha":"2026-03-04","trabajador":"Txema","horas":8.0,"obra":"Carles Riba 52","notas":""},
+  {"id":432,"fecha":"2026-03-04","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilassar","notas":""},
+  {"id":433,"fecha":"2026-03-05","trabajador":"Javi ESE2","horas":1.0,"obra":"Cassoles","notas":""},
+  {"id":434,"fecha":"2026-03-05","trabajador":"Javi ESE2","horas":8.0,"obra":"Av. Diagonal","notas":""},
+  {"id":435,"fecha":"2026-03-04","trabajador":"Carlos Camacho","horas":9.0,"obra":"Exea","notas":""},
+  {"id":436,"fecha":"2026-03-05","trabajador":"Carlos Camacho","horas":9.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":437,"fecha":"2026-03-05","trabajador":"Manja","horas":9.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":438,"fecha":"2026-03-05","trabajador":"Jimmy Jazz S2","horas":9.0,"obra":"Azul Acocsa","notas":""},
+  {"id":439,"fecha":"2026-03-05","trabajador":"JCM","horas":9.0,"obra":"Exea","notas":""},
+  {"id":440,"fecha":"2026-03-05","trabajador":"Paco Ortega","horas":9.0,"obra":"Vilassar","notas":""},
+  {"id":441,"fecha":"2026-03-06","trabajador":"Manja","horas":6.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":442,"fecha":"2026-03-06","trabajador":"Javi ESE2","horas":6.0,"obra":"Av. Diagonal","notas":""},
+  {"id":443,"fecha":"2026-03-06","trabajador":"Jimmy Jazz S2","horas":6.0,"obra":"Azul Acocsa","notas":""},
+  {"id":444,"fecha":"2026-03-06","trabajador":"Carlos Camacho","horas":6.0,"obra":"ISDIN Montcada","notas":""},
+  {"id":445,"fecha":"2026-03-06","trabajador":"JCM","horas":6.0,"obra":"Exea","notas":""},
+  {"id":446,"fecha":"2026-03-06","trabajador":"JCM","horas":3.0,"obra":"Exea","subobra":"Foscurit PT18","notas":""},
+  {"id":447,"fecha":"2026-03-06","trabajador":"Paco Ortega","horas":5.0,"obra":"Transporte Materiales","notas":""},
+  {"id":448,"fecha":"2026-03-08","trabajador":"JCM","obra":"Alma","horas":12.0,"notas":"","subobra":"Sai"},
+];
+
+const FESTIVOS_2026=[
+  {fecha:"2026-01-01",nombre:"Año Nuevo"},{fecha:"2026-01-06",nombre:"Reyes"},
+  {fecha:"2026-04-02",nombre:"Jueves Santo"},{fecha:"2026-04-03",nombre:"Viernes Santo"},
+  {fecha:"2026-04-06",nombre:"Lunes de Pascua"},{fecha:"2026-05-01",nombre:"Día del Trabajo"},
+  {fecha:"2026-06-24",nombre:"San Juan"},{fecha:"2026-08-15",nombre:"Asunción"},
+  {fecha:"2026-09-11",nombre:"Diada de Catalunya"},{fecha:"2026-09-24",nombre:"La Mercè"},
+  {fecha:"2026-10-12",nombre:"Fiesta Nacional"},{fecha:"2026-11-01",nombre:"Todos los Santos"},
+  {fecha:"2026-12-08",nombre:"Inmaculada"},{fecha:"2026-12-25",nombre:"Navidad"},
+  {fecha:"2026-12-26",nombre:"San Esteban"},
+];
+
+function loadState(){
+  try{
+    let data=JSON.parse(localStorage.getItem("wk_data")||"null");
+    if(!data)data=[...INITIAL_DATA];
+    let festivos=JSON.parse(localStorage.getItem("wk_fest")||"[]");
+    FESTIVOS_2026.forEach(f=>{if(!festivos.some(x=>x.fecha===f.fecha))festivos.push(f);});
+    festivos.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    let adminOverrides=JSON.parse(localStorage.getItem("wk_adm")||"{}");
+    let session=JSON.parse(localStorage.getItem("wk_session")||"null");
+    if(session&&session.name===ADMIN_NAME&&!session.isAdmin)session={...session,isAdmin:true};
+    return{
+      data,festivos,adminOverrides,
+      fichajes:JSON.parse(localStorage.getItem("wk_fichajes")||"[]"),
+      accounts:JSON.parse(localStorage.getItem("wk_accounts")||"[]"),
+      ausencias:JSON.parse(localStorage.getItem("wk_ausencias")||"[]"),
+      session,
+    };
+  }catch(e){return{data:[...INITIAL_DATA],festivos:[],adminOverrides:{},fichajes:[],accounts:[],ausencias:[],session:null};}
+}
+
+// ─── SMALL COMPONENTS ────────────────────────────────────────────────────────
+
+function HTBadge({type}){
+  const map={n:{label:"Normal",bg:T.greenDim,color:T.green},e:{label:"Extra",bg:T.goldDim,color:T.goldDark},f:{label:"Festivo",bg:T.redDim,color:T.red},s:{label:"Sábado",bg:T.blueDim,color:T.blue}};
+  const m=map[type]||map.n;
+  return <span style={{fontSize:10,fontWeight:700,fontFamily:T.sans,padding:"2px 7px",borderRadius:20,background:m.bg,color:m.color,letterSpacing:".04em",textTransform:"uppercase"}}>{m.label}</span>;
+}
+
+function Toast({msg,type,onClose}){
+  useEffect(()=>{const t=setTimeout(onClose,3000);return()=>clearTimeout(t);},[]);
+  const bg=type==="error"?T.red:type==="warning"?T.orange:T.green;
+  return(
+    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:bg,color:"#fff",padding:"10px 20px",borderRadius:12,fontFamily:T.sans,fontWeight:600,fontSize:14,zIndex:9999,boxShadow:T.shadowM,whiteSpace:"nowrap",maxWidth:320,textAlign:"center"}}>
+      {msg}
+    </div>
+  );
+}
+
+function useToast(){
+  const [toast,setToast]=useState(null);
+  const show=(msg,type="ok")=>setToast({msg,type,key:Date.now()});
+  const el=toast?<Toast key={toast.key} msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>:null;
+  return[show,el];
+}
+
+function Modal({title,onClose,children,maxW=480}){
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(26,22,18,0.55)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:T.bg2,borderRadius:"20px 20px 0 0",width:"100%",maxWidth:maxW,maxHeight:"88vh",overflowY:"auto",boxShadow:T.shadowL,paddingBottom:"env(safe-area-inset-bottom,16px)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 20px 12px",borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.bg2,zIndex:1}}>
+          <span style={{fontFamily:T.display,fontWeight:900,fontSize:18,color:T.text}}>{title}</span>
+          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:16,color:T.text2,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+        </div>
+        <div style={{padding:"16px 20px"}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function StatBox({label,value,sub,color}){
+  return(
+    <div style={{background:T.bg2,borderRadius:14,padding:"14px 16px",border:`1px solid ${T.border}`,boxShadow:T.shadow,flex:1,minWidth:0}}>
+      <div style={{fontFamily:T.sans,fontSize:11,fontWeight:600,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>{label}</div>
+      <div style={{fontFamily:T.display,fontSize:22,fontWeight:900,color:color||T.text,lineHeight:1}}>{value}</div>
+      {sub&&<div style={{fontFamily:T.sans,fontSize:11,color:T.text3,marginTop:3}}>{sub}</div>}
+    </div>
+  );
+}
+
+function PinPad({onPin,error}){
+  const [val,setVal]=useState("");
+  const add=d=>{if(val.length>=4)return;const nv=val+d;setVal(nv);if(nv.length===4)onPin(nv);};
+  const del=()=>setVal(v=>v.slice(0,-1));
+  const digits=["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  return(
+    <div style={{textAlign:"center"}}>
+      <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:16}}>
+        {[0,1,2,3].map(i=>(
+          <div key={i} style={{width:14,height:14,borderRadius:"50%",background:i<val.length?T.gold:T.bg3,border:`2px solid ${i<val.length?T.gold:T.border}`,transition:"all .15s"}}/>
+        ))}
+      </div>
+      {error&&<div style={{color:T.red,fontFamily:T.sans,fontSize:13,marginBottom:10,fontWeight:600}}>{error}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,maxWidth:220,margin:"0 auto"}}>
+        {digits.map((d,i)=>(
+          <button key={i} onClick={()=>{if(d==="⌫")del();else if(d)add(d);}} disabled={!d}
+            style={{height:52,borderRadius:12,border:`1px solid ${T.border}`,background:d?T.bg2:"transparent",fontFamily:T.sans,fontSize:d==="⌫"?18:20,fontWeight:700,color:d?T.text:"transparent",cursor:d?"pointer":"default",boxShadow:d?T.shadow:"none",transition:"all .1s"}}>
+            {d}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Avatar({name,size=36,color}){
+  const initials=workerInitials(name);
+  return(
+    <div style={{width:size,height:size,borderRadius:"50%",background:color||T.gold,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.sans,fontWeight:800,fontSize:size*0.36,color:"#fff",flexShrink:0,letterSpacing:"-.02em"}}>
+      {initials}
+    </div>
+  );
+}
+
+function Pill({label,active,onClick,color}){
+  return(
+    <button onClick={onClick} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${active?(color||T.gold):T.border}`,background:active?(color?color+"22":T.goldDim):"transparent",fontFamily:T.sans,fontSize:12,fontWeight:600,color:active?(color||T.goldDark):T.text2,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s"}}>
+      {label}
+    </button>
+  );
+}
+
+function Section({title,children,action}){
+  return(
+    <div style={{marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <span style={{fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".07em"}}>{title}</span>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Btn({children,onClick,variant="primary",small,style={},disabled}){
+  const base={fontFamily:T.sans,fontWeight:700,borderRadius:12,border:"none",cursor:disabled?"not-allowed":"pointer",transition:"all .15s",opacity:disabled?.5:1,...style};
+  const size=small?{padding:"7px 14px",fontSize:13}:{padding:"13px 20px",fontSize:15};
+  const colors={
+    primary:{background:T.gold,color:"#fff",boxShadow:`0 2px 8px ${T.goldBorder}`},
+    secondary:{background:T.bg3,color:T.text,border:`1px solid ${T.border}`},
+    danger:{background:T.redDim,color:T.red,border:`1px solid rgba(192,57,43,.2)`},
+    ghost:{background:"transparent",color:T.text2},
+  };
+  return <button onClick={disabled?undefined:onClick} style={{...base,...size,...colors[variant]||colors.primary}}>{children}</button>;
+}
+
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+function PinPadLarge({onPin,error}){
+  const [val,setVal]=useState("");
+  const add=d=>{if(val.length>=4)return;const nv=val+d;setVal(nv);if(nv.length===4)onPin(nv);};
+  const del=()=>setVal(v=>v.slice(0,-1));
+  const digits=["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  return(
+    <div style={{textAlign:"center",width:"100%"}}>
+      <div style={{display:"flex",gap:12,justifyContent:"center",marginBottom:20}}>
+        {[0,1,2,3].map(i=>(
+          <div key={i} style={{width:18,height:18,borderRadius:"50%",background:i<val.length?T.gold:T.bg3,border:`2px solid ${i<val.length?T.gold:T.border}`,transition:"all .15s"}}/>
+        ))}
+      </div>
+      {error&&<div style={{color:T.red,fontFamily:T.sans,fontSize:14,marginBottom:12,fontWeight:700}}>{error}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:280,margin:"0 auto"}}>
+        {digits.map((d,i)=>(
+          <button key={i} onClick={()=>{if(d==="⌫")del();else if(d)add(d);}} disabled={!d}
+            style={{height:68,borderRadius:16,border:`1px solid ${T.border}`,background:d?T.bg2:"transparent",fontFamily:T.sans,fontSize:d==="⌫"?22:26,fontWeight:700,color:d?T.text:"transparent",cursor:d?"pointer":"default",boxShadow:d?T.shadow:"none",transition:"all .1s"}}>
+            {d}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({accounts,onLogin}){
+  const [step,setStep]=useState("select"); // select | pin | blocked
+  const [selected,setSelected]=useState(null);
+  const [showPicker,setShowPicker]=useState(false);
+  const [pinErr,setPinErr]=useState("");
+  const workers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const WC2=["#c9a84c","#2e6da4","#2d7d5a","#7c5cbf","#c97a2e","#c0392b","#2980b9","#8e6b3e"];
+
+  function handleSelect(name){
+    setShowPicker(false);
+    const acc=accounts.find(a=>a.name===name);
+    const devId=getDeviceId();
+    if(acc&&acc.deviceId&&acc.deviceId!==devId){setSelected(name);setStep("blocked");return;}
+    setSelected(name);setPinErr("");setStep("pin");
+  }
+  function handlePin(pin){
+    const isAdmin=selected===ADMIN_NAME&&pin===ADMIN_PIN;
+    const acc=accounts.find(a=>a.name===selected);
+    if(isAdmin||acc?.pin===pin){
+      onLogin({name:selected,isAdmin:isAdmin||selected===ADMIN_NAME,pin});
+    } else {
+      setPinErr("PIN incorrecto");setTimeout(()=>setPinErr(""),1500);
+    }
+  }
+
+  if(step==="blocked")return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{fontFamily:T.display,fontSize:28,fontWeight:900,color:T.text,marginBottom:20}}>Workly</div>
+      <div style={{background:T.redDim,border:`1px solid rgba(192,57,43,.2)`,borderRadius:16,padding:24,textAlign:"center",maxWidth:300}}>
+        <div style={{fontSize:36,marginBottom:10}}>🔒</div>
+        <div style={{fontFamily:T.sans,fontWeight:700,color:T.red,marginBottom:8,fontSize:15}}>Dispositivo no autorizado</div>
+        <div style={{fontFamily:T.sans,fontSize:13,color:T.text2,marginBottom:16}}>Esta cuenta está vinculada a otro dispositivo. Contacta con el administrador.</div>
+        <Btn variant="secondary" small onClick={()=>setStep("select")}>Volver</Btn>
+      </div>
+    </div>
+  );
+
+  if(step==="pin")return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{fontFamily:T.display,fontSize:30,fontWeight:900,color:T.text,marginBottom:6}}>Workly</div>
+      <div style={{fontFamily:T.sans,fontSize:13,color:T.text2,marginBottom:28}}>Introduce tu PIN</div>
+      <Avatar name={selected} size={62} color={WC2[workers.indexOf(selected)%WC2.length]}/>
+      <div style={{fontFamily:T.sans,fontWeight:800,fontSize:18,color:T.text,marginTop:12,marginBottom:28}}>{selected}</div>
+      <PinPadLarge onPin={handlePin} error={pinErr}/>
+      <button onClick={()=>setStep("select")} style={{marginTop:28,background:"none",border:"none",fontFamily:T.sans,fontSize:13,color:T.text2,cursor:"pointer"}}>← Cambiar usuario</button>
+    </div>
+  );
+
+  // Pantalla de selección
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{fontFamily:T.display,fontSize:36,fontWeight:900,color:T.text,letterSpacing:"-.02em",marginBottom:6}}>Workly</div>
+      <div style={{fontFamily:T.sans,fontSize:14,color:T.text2,marginBottom:48}}>Grup Ese Dos · Ribasesedos</div>
+
+      {/* Selector desplegable */}
+      <div style={{width:"100%",maxWidth:320,position:"relative"}}>
+        <button onClick={()=>setShowPicker(p=>!p)} style={{width:"100%",display:"flex",alignItems:"center",gap:14,background:T.bg2,border:`1px solid ${showPicker?T.gold:T.border}`,borderRadius:16,padding:"16px 18px",cursor:"pointer",boxShadow:T.shadowM,textAlign:"left"}}>
+          {selected
+            ? <><Avatar name={selected} size={40} color={WC2[workers.indexOf(selected)%WC2.length]}/><span style={{fontFamily:T.sans,fontWeight:700,fontSize:16,color:T.text,flex:1}}>{selected}</span></>
+            : <><div style={{width:40,height:40,borderRadius:"50%",background:T.bg3,border:`1px dashed ${T.border}`}}/><span style={{fontFamily:T.sans,fontWeight:600,fontSize:15,color:T.text2,flex:1}}>Selecciona tu nombre</span></>
+          }
+          <span style={{color:T.text3,fontSize:18,transform:showPicker?"rotate(180deg)":"none",transition:"transform .2s"}}>▼</span>
+        </button>
+
+        {showPicker&&(
+          <div style={{position:"absolute",top:"calc(100% + 8px)",left:0,right:0,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:16,boxShadow:T.shadowL,zIndex:200,overflow:"hidden"}}>
+            {workers.map((w,i)=>(
+              <button key={w} onClick={()=>handleSelect(w)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",background:"none",border:"none",borderBottom:`1px solid ${T.border}`,cursor:"pointer",textAlign:"left"}}>
+                <Avatar name={w} size={36} color={WC2[i%WC2.length]}/>
+                <span style={{fontFamily:T.sans,fontWeight:700,fontSize:14,color:T.text}}>{w}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selected&&(
+        <Btn onClick={()=>setStep("pin")} style={{width:"100%",maxWidth:320,marginTop:16}}>Continuar →</Btn>
+      )}
+
+      <button onClick={()=>handleSelect("Txema")} style={{marginTop:32,background:"none",border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 16px",fontFamily:T.sans,fontSize:12,color:T.text2,cursor:"pointer"}}>Demo: Txema</button>
+    </div>
+  );
+}
+
+// ─── NAVBAR ───────────────────────────────────────────────────────────────────
+// ─── FICHAR ───────────────────────────────────────────────────────────────────
+function FicharScreen({data,session,festivos,adminOverrides,onSave,toast}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const [trabajador,setTrabajador]=useState(session.isAdmin?"JCM":session.name);
+  const [fecha,setFecha]=useState(today());
+  const [obraInput,setObraInput]=useState("");
+  const [obra,setObra]=useState("");
+  const [subobra,setSubobra]=useState("");
+  const [horas,setHoras]=useState("8");
+  const [notas,setNotas]=useState("");
+  const [showObraSugs,setShowObraSugs]=useState(false);
+  const [saved,setSaved]=useState(false);
+
+  const allSubobras=[...new Set(data.filter(e=>e.obra===(obra||obraInput)).map(e=>e.subobra).filter(Boolean))];
+  const obraSugs=obraInput.length>0?allObras.filter(o=>o.toLowerCase().includes(obraInput.toLowerCase())).slice(0,6):[];
+  const isDuplicate=data.some(e=>e.trabajador===trabajador&&e.fecha===fecha&&e.obra===(obra||obraInput)&&((!e.subobra&&!subobra)||(e.subobra===subobra)));
+  const ht=getHT({fecha,horas:+horas,tipoOverride:undefined},festivos);
+
+  function handleSave(){
+    const obraFinal=obra||obraInput.trim();
+    if(!obraFinal){toast("Indica la obra","error");return;}
+    if(!horas||isNaN(+horas)||+horas<=0){toast("Horas inválidas","error");return;}
+    // duplicado avisado visualmente, se permite guardar
+    onSave({trabajador,fecha,horas:+horas,obra:obraFinal,subobra:subobra.trim(),notas:notas.trim()});
+    toast("✓ Parte guardado");
+    setSaved(true);
+    // Reset para siguiente entrada, misma fecha y trabajador
+    setObraInput("");setObra("");setSubobra("");setHoras("8");setNotas("");
+    setTimeout(()=>setSaved(false),2000);
+  }
+
+  const inp={width:"100%",padding:"13px 14px",borderRadius:14,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:15,color:T.text,outline:"none"};
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6,display:"block"};
+
+  return(
+    <div style={{paddingBottom:100}}>
+      <Header title="Fichar horas" sub={fecha===today()?"Hoy · "+new Date().toLocaleDateString("es-ES",{weekday:"long"}):""}/>
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:16}}>
+
+        {/* Alerta duplicado */}
+        {isDuplicate&&<div style={{background:T.orangeDim,border:`1px solid rgba(201,122,46,.3)`,borderRadius:12,padding:"10px 14px",fontFamily:T.sans,fontSize:13,color:T.orange,fontWeight:600}}>⚠️ Ya existe un parte para esta fecha y obra</div>}
+
+        {/* Trabajador (solo admin) */}
+        {session.isAdmin&&(
+          <div>
+            <label style={lbl}>Trabajador</label>
+            <select value={trabajador} onChange={e=>setTrabajador(e.target.value)} style={{...inp}}>
+              {allWorkers.map(w=><option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Fecha con calendario */}
+        <div>
+          <label style={lbl}>Fecha</label>
+          <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp}}/>
+        </div>
+
+        {/* Tipo de día badge */}
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <HTBadge type={ht}/>
+          <span style={{fontFamily:T.sans,fontSize:12,color:T.text3}}>{ht==="n"?"Día normal":ht==="s"?"Sábado":ht==="f"?"Festivo":"Hora extra"}</span>
+        </div>
+
+        {/* Obra */}
+        <div style={{position:"relative"}}>
+          <label style={lbl}>Obra</label>
+          <input value={obra||obraInput} onChange={e=>{setObraInput(e.target.value);setObra("");setShowObraSugs(true);}} onFocus={()=>setShowObraSugs(true)} placeholder="Nombre de la obra..." style={{...inp}}/>
+          {showObraSugs&&obraSugs.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,zIndex:50,boxShadow:T.shadowM,overflow:"hidden",marginTop:4}}>
+              {obraSugs.map(o=>(
+                <div key={o} onClick={()=>{setObra(o);setObraInput(o);setShowObraSugs(false);}} style={{padding:"11px 14px",fontFamily:T.sans,fontSize:14,color:T.text,cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>{o}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Subobra */}
+        {(obra||obraInput)&&(
+          <div>
+            <label style={lbl}>Subobra / Partida</label>
+            <input value={subobra} onChange={e=>setSubobra(e.target.value)} list="subobra-list" placeholder="Opcional..." style={{...inp}}/>
+            <datalist id="subobra-list">{allSubobras.map(s=><option key={s} value={s}/>)}</datalist>
+          </div>
+        )}
+
+        {/* Horas */}
+        <div>
+          <label style={lbl}>Horas</label>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {[4,6,7,8,9,10,11,12].map(h=>(
+              <button key={h} onClick={()=>setHoras(String(h))} style={{padding:"10px 16px",borderRadius:12,border:`1px solid ${+horas===h?T.goldBorder:T.border}`,background:+horas===h?T.goldDim:T.bg2,fontFamily:T.sans,fontSize:14,fontWeight:+horas===h?700:500,color:+horas===h?T.goldDark:T.text,cursor:"pointer"}}>{h}h</button>
+            ))}
+            <input type="number" value={horas} onChange={e=>setHoras(e.target.value)} style={{...inp,width:70,textAlign:"center"}} min="0.5" max="24" step="0.5"/>
+          </div>
+        </div>
+
+        {/* Notas */}
+        <div>
+          <label style={lbl}>Notas <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></label>
+          <textarea value={notas} onChange={e=>setNotas(e.target.value)} rows={2} placeholder="Descripción del trabajo..." style={{...inp,resize:"vertical"}}/>
+        </div>
+
+        <Btn onClick={handleSave} style={{width:"100%",padding:"16px",fontSize:16,marginTop:4}}>
+          {saved?"✓ Guardado":"Guardar parte"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── PARTE FORMAL ─────────────────────────────────────────────────────────────
+function ParteFormaScreen({data,festivos,obrasMeta,setObrasMeta,onClose,toast}){
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const [modo,setModo]=useState("workly"); // "workly" | "libre"
+
+  // Campos comunes
+  const [obraInput,setObraInput]=useState("");
+  const [obra,setObra]=useState("");
+  const [showObraSugs,setShowObraSugs]=useState(false);
+  const [subobra,setSubobra]=useState("");
+  const [fechaIni,setFechaIni]=useState("");
+  const [fechaFin,setFechaFin]=useState(today());
+  const [dir,setDir]=useState("");
+  const [trabajos,setTrabajos]=useState("");
+  const [materiales,setMateriales]=useState("");
+
+  // Campos modo libre
+  const [libWorkers,setLibWorkers]=useState([{trabajador:"JCM",fecha:today(),horas:8,notas:""}]);
+
+  const obraFinal=obra||obraInput.trim();
+  const obraSugs=obraInput.length>0?allObras.filter(o=>o.toLowerCase().includes(obraInput.toLowerCase())).slice(0,6):[];
+  const allSubobras=[...new Set(data.filter(e=>e.obra===obraFinal).map(e=>e.subobra).filter(Boolean))];
+
+  function selectObra(o){
+    setObra(o);setObraInput(o);setShowObraSugs(false);
+    const mk=obraKey(o);
+    const meta=(obrasMeta&&obrasMeta[mk])||{};
+    if(meta.direccion)setDir(meta.direccion);
+    const oEntries=data.filter(e=>e.obra===o).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    if(oEntries.length>0)setFechaIni(oEntries[0].fecha);
+  }
+
+  // Entradas modo Workly
+  const entries=data.filter(e=>{
+    if(e.obra!==obraFinal)return false;
+    if(subobra&&e.subobra!==subobra)return false;
+    if(fechaIni&&e.fecha<fechaIni)return false;
+    if(fechaFin&&e.fecha>fechaFin)return false;
+    return true;
+  });
+  const total=entries.reduce((s,e)=>s+e.horas,0);
+
+  // Entradas modo libre
+  const libreEntries=libWorkers.map(w=>({...w,obra:obraFinal,subobra,tipoOverride:undefined}));
+  const libreTotal=libWorkers.reduce((s,w)=>s+Number(w.horas||0),0);
+
+  function handleGenerar(){
+    if(!obraFinal){toast("Indica el nombre de la obra","error");return;}
+    if(dir&&setObrasMeta){
+      const mk=obraKey(obraFinal);
+      const meta=(obrasMeta&&obrasMeta[mk])||{};
+      if(dir!==meta.direccion){
+        const upd={...obrasMeta,[mk]:{...meta,direccion:dir}};
+        setObrasMeta(upd);localStorage.setItem("wk_obras_meta",JSON.stringify(upd));
+      }
+    }
+    if(modo==="workly"){
+      if(entries.length===0){toast("No hay partes en ese período","error");return;}
+      const operarios=[...new Set(entries.map(e=>e.trabajador))].map(nombrePDF).join(" / ");
+      const fechasUnicas=[...new Set(entries.map(e=>e.fecha))].sort();
+      const fechasStr=fechasUnicas.map(f=>new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"})).join(" y ");
+      const horasPorDia=fechasUnicas.map(f=>{
+        const h=entries.filter(e=>e.fecha===f).reduce((s,e)=>s+e.horas,0);
+        const fLabel=new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit"});
+        return h+"h ("+fLabel+")";
+      });
+      const horasStr=total+"h totales"+(horasPorDia.length>1?" — "+horasPorDia.join(" + "):"");
+      generarPDFSimple(obraFinal,subobra,dir,operarios,fechasStr,horasStr,trabajos,materiales);
+    } else {
+      if(libWorkers.length===0){toast("Añade al menos un trabajador","error");return;}
+      const operarios=[...new Set(libWorkers.map(w=>w.trabajador))].map(nombrePDF).join(" / ");
+      const fechasUnicas=[...new Set(libWorkers.map(w=>w.fecha))].sort();
+      const fechasStr=fechasUnicas.map(f=>new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"})).join(" y ");
+      const horasPorDia=fechasUnicas.map(f=>{
+        const h=libWorkers.filter(w=>w.fecha===f).reduce((s,w)=>s+Number(w.horas||0),0);
+        const fLabel=new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit"});
+        return h+"h ("+fLabel+")";
+      });
+      const horasStr=libreTotal+"h totales"+(horasPorDia.length>1?" — "+horasPorDia.join(" + "):"");
+      generarPDFSimple(obraFinal,subobra,dir,operarios,fechasStr,horasStr,trabajos,materiales);
+    }
+    toast("PDF generado");
+  }
+
+  const inp={width:"100%",padding:"13px 14px",borderRadius:14,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none"};
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:11,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6,display:"block"};
+
+  return(
+    <div style={{paddingBottom:100}}>
+      <Header title="Parte PDF" sub="Genera PDF para cliente" onBack={onClose}/>
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:16}}>
+
+        {/* Selector de modo */}
+        <div style={{display:"flex",gap:8}}>
+          {[["workly","📊 Desde Workly"],["libre","✏️ Parte nuevo"]].map(([m,l])=>(
+            <button key={m} onClick={()=>setModo(m)} style={{flex:1,padding:"10px 8px",borderRadius:12,border:`1px solid ${modo===m?T.goldBorder:T.border}`,background:modo===m?T.goldDim:T.bg3,fontFamily:T.sans,fontSize:13,fontWeight:modo===m?700:500,color:modo===m?T.goldDark:T.text2,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+
+        {/* Obra */}
+        <div style={{position:"relative"}}>
+          <label style={lbl}>Obra</label>
+          <input value={obra||obraInput} onChange={e=>{setObraInput(e.target.value);setObra("");setShowObraSugs(true);}} onFocus={()=>setShowObraSugs(true)} placeholder={modo==="workly"?"Buscar obra existente...":"Nombre de la obra..."} style={{...inp}}/>
+          {showObraSugs&&obraSugs.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,zIndex:50,boxShadow:T.shadowM,overflow:"hidden",marginTop:4}}>
+              {obraSugs.map(o=>(
+                <div key={o} onClick={()=>selectObra(o)} style={{padding:"11px 14px",fontFamily:T.sans,fontSize:14,color:T.text,cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>{o}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Subobra */}
+        <div>
+          <label style={lbl}>Subobra / Partida <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></label>
+          <input value={subobra} onChange={e=>setSubobra(e.target.value)} list="sf-subobra-list" placeholder="Opcional..." style={{...inp}}/>
+          <datalist id="sf-subobra-list">{allSubobras.map(s=><option key={s} value={s}/>)}</datalist>
+        </div>
+
+        {/* Período */}
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1}}>
+            <label style={lbl}>Desde</label>
+            <input type="date" value={fechaIni} onChange={e=>setFechaIni(e.target.value)} style={{...inp}}/>
+          </div>
+          <div style={{flex:1}}>
+            <label style={lbl}>Hasta</label>
+            <input type="date" value={fechaFin} onChange={e=>setFechaFin(e.target.value)} style={{...inp}}/>
+          </div>
+        </div>
+
+        {/* Resumen modo Workly */}
+        {modo==="workly"&&obraFinal&&(
+          <div style={{background:entries.length>0?T.goldDim:T.bg3,border:`1px solid ${entries.length>0?T.goldBorder:T.border}`,borderRadius:12,padding:"12px 14px",fontFamily:T.sans,fontSize:13,color:entries.length>0?T.goldDark:T.text3,fontWeight:600}}>
+            {entries.length>0?`${entries.length} partes · ${total}h · ${[...new Set(entries.map(e=>e.trabajador))].length} trabajadores`:"Sin partes en este período"}
+          </div>
+        )}
+
+        {/* Filas de trabajadores modo libre */}
+        {modo==="libre"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <label style={{...lbl,marginBottom:0}}>Trabajadores</label>
+              <button onClick={()=>setLibWorkers(w=>[...w,{trabajador:"JCM",fecha:today(),horas:8,notas:""}])} style={{background:T.goldDim,border:`1px solid ${T.goldBorder}`,borderRadius:8,padding:"4px 12px",fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.goldDark,cursor:"pointer"}}>+ Añadir</button>
+            </div>
+            {libWorkers.map((w,i)=>(
+              <div key={i} style={{background:T.bg3,borderRadius:12,padding:"10px 12px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",gap:8}}>
+                  <select value={w.trabajador} onChange={e=>{const u=[...libWorkers];u[i]={...u[i],trabajador:e.target.value};setLibWorkers(u);}} style={{...inp,flex:2,padding:"8px 10px",fontSize:13}}>
+                    {allWorkers.map(aw=><option key={aw} value={aw}>{aw}</option>)}
+                  </select>
+                  <input type="date" value={w.fecha} onChange={e=>{const u=[...libWorkers];u[i]={...u[i],fecha:e.target.value};setLibWorkers(u);}} style={{...inp,flex:2,padding:"8px 10px",fontSize:13}}/>
+                  <input type="number" value={w.horas} onChange={e=>{const u=[...libWorkers];u[i]={...u[i],horas:+e.target.value};setLibWorkers(u);}} style={{...inp,flex:1,padding:"8px 6px",fontSize:13,textAlign:"center"}} min="0.5" max="24" step="0.5"/>
+                  <button onClick={()=>setLibWorkers(w=>w.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:T.red,fontSize:18,cursor:"pointer",flexShrink:0,padding:"0 4px"}}>×</button>
+                </div>
+                <input value={w.notas} onChange={e=>{const u=[...libWorkers];u[i]={...u[i],notas:e.target.value};setLibWorkers(u);}} placeholder="Notas (opcional)..." style={{...inp,padding:"8px 10px",fontSize:13}}/>
+              </div>
+            ))}
+            {libWorkers.length>0&&<div style={{fontFamily:T.sans,fontSize:13,color:T.goldDark,fontWeight:700,textAlign:"right"}}>Total: {libreTotal}h</div>}
+          </div>
+        )}
+
+        {/* Dirección */}
+        <div>
+          <label style={lbl}>Dirección <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></label>
+          <input value={dir} onChange={e=>setDir(e.target.value)} placeholder="Av. de la Llum 12, Barcelona..." style={{...inp}}/>
+        </div>
+
+        {/* Trabajos */}
+        <div>
+          <label style={lbl}>Trabajos realizados <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></label>
+          <textarea value={trabajos} onChange={e=>setTrabajos(e.target.value)} rows={3} placeholder="Descripción de los trabajos..." style={{...inp,resize:"vertical"}}/>
+        </div>
+
+        {/* Materiales */}
+        <div>
+          <label style={lbl}>Materiales utilizados <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></label>
+          <textarea value={materiales} onChange={e=>setMateriales(e.target.value)} rows={3} placeholder="Lista de materiales..." style={{...inp,resize:"vertical"}}/>
+        </div>
+
+        <Btn onClick={handleGenerar} style={{width:"100%",padding:"16px",fontSize:16,marginTop:4}}>
+          🖨 Generar PDF parte
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+function NavBar({tab,setTab,isAdmin,ausencias}){
+  const pendientes=(ausencias||[]).filter(a=>a.estado==="pendiente").length;
+  const adminTabs=[
+    {id:"dashboard",icon:"⊞",label:"Inicio"},
+    {id:"partes",icon:"📋",label:"Partes"},
+    {id:"fichar",icon:"⏱",label:"Fichar"},
+    {id:"ausencias",icon:"📅",label:"Ausencias",badge:pendientes},
+    {id:"obras",icon:"🏗",label:"Obras"},
+    {id:"cal",icon:"🗓",label:"Cal"},
+    {id:"cfg",icon:"⚙",label:"Config"},
+  ];
+  const workerTabs=[
+    {id:"miperfil",icon:"👤",label:"Yo"},
+    {id:"partes",icon:"📋",label:"Partes"},
+    {id:"fichar",icon:"⏱",label:"Fichar"},
+    {id:"ausencias",icon:"📅",label:"Ausencias"},
+    {id:"cal",icon:"🗓",label:"Cal"},
+    {id:"cfg",icon:"⚙",label:"Config"},
+  ];
+  const tabs=isAdmin?adminTabs:workerTabs;
+  return(
+    <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:520,background:T.bg2,borderTop:`1px solid ${T.border}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)",boxShadow:"0 -2px 16px rgba(100,80,40,0.08)"}}>
+      {tabs.map(t=>(
+        <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"8px 2px 6px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,position:"relative"}}>
+          <span style={{fontSize:t.id==="nuevo"?22:18,lineHeight:1,opacity:tab===t.id?1:0.55}}>{t.icon}</span>
+          <span style={{fontFamily:T.sans,fontSize:9,fontWeight:tab===t.id?800:500,color:tab===t.id?T.goldDark:T.text2,letterSpacing:".03em"}}>{t.label}</span>
+          {t.badge>0&&<span style={{position:"absolute",top:4,right:"calc(50% - 14px)",background:T.red,color:"#fff",borderRadius:10,fontSize:9,fontWeight:800,padding:"1px 5px",fontFamily:T.sans}}>{t.badge}</span>}
+          {tab===t.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:2,background:T.gold,borderRadius:2}}/>}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function Header({title,sub,right,onBack}){
+  return(
+    <div style={{position:"sticky",top:0,zIndex:50,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 18px 10px",display:"flex",alignItems:"center",gap:12,boxShadow:T.shadow}}>
+      {onBack&&<button onClick={onBack} style={{background:T.bg3,border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,color:T.text2,flexShrink:0}}>←</button>}
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontFamily:T.display,fontWeight:900,fontSize:20,color:T.text,letterSpacing:"-.01em",lineHeight:1.1}}>{title}</div>
+        {sub&&<div style={{fontFamily:T.sans,fontSize:12,color:T.text2,marginTop:2}}>{sub}</div>}
+      </div>
+      {right&&<div style={{flexShrink:0}}>{right}</div>}
+    </div>
+  );
+}
+
+function Dashboard({data,festivos,session,setTab,ausencias,onSelectWorker,onSelectObra}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+  const mesActual=data.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  const totalH=mesActual.reduce((s,e)=>s+e.horas,0);
+  const semana=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);semana.push(d.toISOString().split("T")[0]);}
+  const hSemana=data.filter(e=>semana.includes(e.fecha)).reduce((s,e)=>s+e.horas,0);
+  const workersActivos=[...new Set(mesActual.map(e=>e.trabajador))];
+  const obrasActivas=[...new Set(mesActual.map(e=>e.obra))];
+  const allWorkersSorted=[...allWorkers].sort((a,b)=>{
+    const hA=mesActual.filter(e=>e.trabajador===a).reduce((s,e)=>s+e.horas,0);
+    const hB=mesActual.filter(e=>e.trabajador===b).reduce((s,e)=>s+e.horas,0);
+    return hB-hA;
+  });
+  const obrasActivasSorted=[...obrasActivas].sort((a,b)=>{
+    const hA=mesActual.filter(e=>e.obra===a).reduce((s,e)=>s+e.horas,0);
+    const hB=mesActual.filter(e=>e.obra===b).reduce((s,e)=>s+e.horas,0);
+    return hB-hA;
+  });
+  const ultimas=[...data].sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id).slice(0,8);
+  const pendientes=(ausencias||[]).filter(a=>a.estado==="pendiente");
+  const mnArr=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  return(
+    <div style={{paddingBottom:80}}>
+      <div style={{background:T.bgDark,padding:"24px 20px 20px",color:"#fff"}}>
+        <div style={{fontFamily:T.sans,fontSize:11,color:"rgba(255,255,255,.4)",marginBottom:2,letterSpacing:".06em",textTransform:"uppercase"}}>Workly · Grup Ese Dos</div>
+        <div style={{fontFamily:T.display,fontSize:28,fontWeight:900,letterSpacing:"-.02em"}}>{mnArr[mo]} {yr}</div>
+        <div style={{display:"flex",gap:10,marginTop:16}}>
+          {[{l:"Horas mes",v:totalH+"h",c:T.gold},{l:"Esta semana",v:hSemana+"h",c:"#fff"},{l:"Partes mes",v:mesActual.length,c:"#fff"}].map(x=>(
+            <div key={x.l} style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:12,padding:"12px 14px",border:"1px solid rgba(255,255,255,.08)"}}>
+              <div style={{fontFamily:T.sans,fontSize:10,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".06em"}}>{x.l}</div>
+              <div style={{fontFamily:T.display,fontSize:24,fontWeight:900,color:x.c,marginTop:2}}>{x.v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:"18px 16px 0"}}>
+        {pendientes.length>0&&(
+          <div onClick={()=>setTab("ausencias")} style={{background:T.orangeDim,border:`1px solid rgba(201,122,46,.25)`,borderRadius:14,padding:"12px 16px",marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:20}}>⚠️</span>
+            <div>
+              <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.orange}}>{pendientes.length} ausencia{pendientes.length>1?"s":""} pendiente{pendientes.length>1?"s":""}</div>
+              <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>Toca para revisar</div>
+            </div>
+          </div>
+        )}
+        <Section title="Equipo activo este mes" action={<button onClick={()=>setTab("equipo")} style={{background:"none",border:"none",fontFamily:T.sans,fontSize:11,color:T.goldDark,cursor:"pointer",fontWeight:700}}>Ver todo →</button>}>
+          <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
+            {allWorkersSorted.map((w,i)=>{
+              const activo=workersActivos.includes(w);
+              const hW=mesActual.filter(e=>e.trabajador===w).reduce((s,e)=>s+e.horas,0);
+              return(
+                <div key={w} onClick={()=>onSelectWorker(w)} style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",opacity:activo?1:.4}}>
+                  <Avatar name={w} size={44} color={WC[allWorkers.indexOf(w)%WC.length]}/>
+                  <div style={{fontFamily:T.sans,fontSize:10,fontWeight:700,color:T.text,textAlign:"center",width:46,lineHeight:1.2}}>{w.split(" ")[0]}</div>
+                  {activo&&<div style={{fontFamily:T.mono,fontSize:9,color:T.goldDark,fontWeight:700}}>{hW}h</div>}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+        <Section title="Obras activas" action={<button onClick={()=>setTab("obras")} style={{background:"none",border:"none",fontFamily:T.sans,fontSize:11,color:T.goldDark,cursor:"pointer",fontWeight:700}}>Ver todo →</button>}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {obrasActivasSorted.slice(0,5).map(o=>{
+              const hO=mesActual.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
+              const ws=[...new Set(mesActual.filter(e=>e.obra===o).map(e=>e.trabajador))];
+              return(
+                <div key={o} onClick={()=>onSelectObra(o)} style={{background:T.bg2,borderRadius:12,padding:"11px 14px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12,cursor:"pointer",boxShadow:T.shadow}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:obraColor(o,allObras),flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o}</div>
+                    <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{ws.length} trabajador{ws.length!==1?"es":""}</div>
+                  </div>
+                  <div style={{fontFamily:T.display,fontWeight:900,fontSize:16,color:T.text}}>{hO}h</div>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+        <Section title="Últimas entradas">
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {ultimas.map(e=>(
+              <div key={e.id} style={{background:T.bg2,borderRadius:10,padding:"9px 12px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                <Avatar name={e.trabajador} size={30} color={WC[allWorkers.indexOf(e.trabajador)%WC.length]}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.trabajador} · <span style={{color:obraColor(e.obra,allObras)}}>{e.obra}</span>{e.subobra?` / ${e.subobra}`:""}</div>
+                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{fmtShort(e.fecha)}</div>
+                </div>
+                <div style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>{e.horas}h</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function MiPerfil({session,data,festivos,ausencias,onLogout}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const myData=data.filter(e=>e.trabajador===session.name);
+  const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+  const mesMio=myData.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  const totalMes=mesMio.reduce((s,e)=>s+e.horas,0);
+  const semana=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);semana.push(d.toISOString().split("T")[0]);}
+  const hSem=myData.filter(e=>semana.includes(e.fecha)).reduce((s,e)=>s+e.horas,0);
+  const totalGlobal=myData.reduce((s,e)=>s+e.horas,0);
+  const misObras=[...new Set(mesMio.map(e=>e.obra))];
+  const misAusencias=(ausencias||[]).filter(a=>a.trabajador===session.name).slice(-5).reverse();
+  const mnArr=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  return(
+    <div style={{paddingBottom:80}}>
+      <div style={{background:T.bgDark,padding:"28px 20px 24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <Avatar name={session.name} size={64} color={WC[allWorkers.indexOf(session.name)%WC.length]}/>
+        <div style={{fontFamily:T.display,fontSize:22,fontWeight:900,color:"#fff",marginTop:10}}>{session.name}</div>
+        <div style={{fontFamily:T.sans,fontSize:12,color:"rgba(255,255,255,.45)",marginTop:2}}>Trabajador · Grup Ese Dos</div>
+      </div>
+      <div style={{padding:"16px 16px 0"}}>
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          <StatBox label={`Horas ${mnArr[mo]}`} value={`${totalMes}h`} color={T.goldDark}/>
+          <StatBox label="Esta semana" value={`${hSem}h`}/>
+          <StatBox label="Total" value={`${totalGlobal}h`}/>
+        </div>
+        <Section title={`Obras este mes (${misObras.length})`}>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {misObras.map(o=>{
+              const hO=mesMio.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
+              return(
+                <div key={o} style={{background:T.bg2,borderRadius:10,padding:"9px 14px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:obraColor(o,[])}}/>
+                  <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,flex:1}}>{o}</span>
+                  <span style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:T.text}}>{hO}h</span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+        <Section title="Últimas entradas">
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {[...myData].sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id).slice(0,6).map(e=>(
+              <div key={e.id} style={{background:T.bg2,borderRadius:10,padding:"9px 12px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text}}>{e.obra}{e.subobra?` / ${e.subobra}`:""}</div>
+                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{fmtShort(e.fecha)}</div>
+                </div>
+                <div style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:T.text}}>{e.horas}h</div>
+                <HTBadge type={getHT(e,festivos)}/>
+              </div>
+            ))}
+          </div>
+        </Section>
+        {misAusencias.length>0&&(
+          <Section title="Mis ausencias">
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {misAusencias.map((a,i)=>(
+                <div key={i} style={{background:T.bg2,borderRadius:10,padding:"9px 12px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text}}>{a.tipo==="vacaciones"?"Vacaciones":a.tipo==="fiesta"?"Día festivo":"Permiso"}</div>
+                    <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{a.fechaInicio}{a.fechaFin&&a.fechaFin!==a.fechaInicio?` → ${a.fechaFin}`:""}</div>
+                  </div>
+                  <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:a.estado==="aprobada"?T.green:a.estado==="rechazada"?T.red:T.orange,background:a.estado==="aprobada"?T.greenDim:a.estado==="rechazada"?T.redDim:T.orangeDim,padding:"3px 8px",borderRadius:10}}>{a.estado}</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+        <Btn variant="danger" style={{width:"100%",marginTop:8}} onClick={onLogout}>Cerrar sesión</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── PARTES LIST ─────────────────────────────────────────────────────────────
+function PartesList({data,festivos,session,onSelectParte,onSelectWorker,onSelectObra}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const [fW,setFW]=useState("todos");
+  const [fO,setFO]=useState("todas");
+  const [search,setSearch]=useState("");
+  const [soloNuevos,setSoloNuevos]=useState(false);
+
+  const myPartes=session.isAdmin?data:data.filter(e=>e.trabajador===session.name);
+  const maxId=Math.max(...INITIAL_DATA.map(e=>e.id));
+
+  let filtered=myPartes;
+  if(soloNuevos)filtered=filtered.filter(e=>e.id>maxId);
+  if(fW!=="todos")filtered=filtered.filter(e=>e.trabajador===fW);
+  if(fO!=="todas")filtered=filtered.filter(e=>e.obra===fO);
+  if(search.trim())filtered=filtered.filter(e=>(e.obra+e.trabajador+(e.subobra||"")+(e.notas||"")).toLowerCase().includes(search.toLowerCase()));
+  filtered=[...filtered].sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id);
+
+  const totalH=filtered.reduce((s,e)=>s+e.horas,0);
+  const workers=session.isAdmin?allWorkers:[session.name];
+  const obras=[...new Set(myPartes.map(e=>e.obra))].sort();
+
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Partes" sub={`${filtered.length} entradas · ${totalH}h`}/>
+      <div style={{padding:"12px 14px 0"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar obra, trabajador..." style={{width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none",marginBottom:10}}/>
+        {session.isAdmin&&(
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:6}}>
+            <Pill label="Todos" active={fW==="todos"} onClick={()=>setFW("todos")}/>
+            {workers.map(w=><Pill key={w} label={w.split(" ")[0]} active={fW===w} onClick={()=>setFW(w)} color={WC[allWorkers.indexOf(w)%WC.length]}/>)}
+          </div>
+        )}
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:6}}>
+          <Pill label="Todas" active={fO==="todas"} onClick={()=>setFO("todas")}/>
+          {obras.map(o=><Pill key={o} label={o} active={fO===o} onClick={()=>setFO(o)}/>)}
+        </div>
+        {session.isAdmin&&(
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <button onClick={()=>setSoloNuevos(s=>!s)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${soloNuevos?T.gold:T.border}`,background:soloNuevos?T.goldDim:"transparent",fontFamily:T.sans,fontSize:12,fontWeight:600,color:soloNuevos?T.goldDark:T.text2,cursor:"pointer"}}>Solo nuevos</button>
+          </div>
+        )}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {filtered.map(e=>(
+            <div key={e.id} onClick={()=>onSelectParte(e)} style={{background:T.bg2,borderRadius:12,padding:"10px 14px",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer",boxShadow:T.shadow}}>
+              <Avatar name={e.trabajador} size={34} color={WC[allWorkers.indexOf(e.trabajador)%WC.length]}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.isAdmin?e.trabajador+" · ":""}<span style={{color:obraColor(e.obra,allObras)}}>{e.obra}</span>{e.subobra?` / ${e.subobra}`:""}</div>
+                <div style={{fontFamily:T.sans,fontSize:11,color:T.text2,display:"flex",gap:6,alignItems:"center"}}>
+                  <span>{fmtShort(e.fecha)}</span>
+                  <HTBadge type={getHT(e,festivos)}/>
+                  {e.notas&&<span style={{color:T.text3}}>📝</span>}
+                </div>
+              </div>
+              <div style={{fontFamily:T.mono,fontSize:15,fontWeight:800,color:T.text,flexShrink:0}}>{e.horas}h</div>
+            </div>
+          ))}
+          {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 20px",fontFamily:T.sans,color:T.text3}}>Sin resultados</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── NUEVO PARTE ──────────────────────────────────────────────────────────────
+function NuevoParte({data,session,festivos,onSave,prefill,toast}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const allSubobras=[...new Set(data.filter(e=>e.subobra).map(e=>e.subobra))].sort();
+
+  const [trabajador,setTrabajador]=useState(prefill?.trabajador||(session.isAdmin?"JCM":session.name));
+  const [fecha,setFecha]=useState(prefill?.fecha||today());
+  const [horas,setHoras]=useState(prefill?.horas||"9");
+  const [obra,setObra]=useState(prefill?.obra||"");
+  const [subobra,setSubobra]=useState(prefill?.subobra||"");
+  const [notas,setNotas]=useState(prefill?.notas||"");
+  const [tipoOverride,setTipoOverride]=useState(prefill?.tipoOverride||"");
+  const [obraInput,setObraInput]=useState(prefill?.obra||"");
+  const [showObraSug,setShowObraSug]=useState(false);
+
+  const obraSugs=obraInput.length>0?allObras.filter(o=>o.toLowerCase().includes(obraInput.toLowerCase())).slice(0,6):[];
+  const subobraSugs=allSubobras.filter(s=>!subobra||s.toLowerCase().includes(subobra.toLowerCase())).slice(0,4);
+
+  // Alerta duplicado
+  const isDuplicate=data.some(e=>e.trabajador===trabajador&&e.fecha===fecha&&e.obra===(obra||obraInput)&&((!e.subobra&&!subobra)||(e.subobra===subobra)));
+
+  function handleSave(){
+    const obraFinal=obra||obraInput.trim();
+    if(!obraFinal){toast("Indica la obra","error");return;}
+    if(!horas||isNaN(+horas)||+horas<=0){toast("Horas inválidas","error");return;}
+    // duplicado avisado visualmente, se permite guardar
+    onSave({trabajador,fecha,horas:+horas,obra:obraFinal,subobra:subobra.trim(),notas:notas.trim(),tipoOverride:tipoOverride||undefined});
+  }
+
+  const ht=getHT({fecha,horas:+horas,tipoOverride},festivos);
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5,display:"block"};
+  const inp={width:"100%",padding:"11px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none"};
+
+  return(
+    <div style={{paddingBottom:100}}>
+      <Header title="Nuevo parte"/>
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
+        {isDuplicate&&<div style={{background:T.orangeDim,border:`1px solid rgba(201,122,46,.3)`,borderRadius:12,padding:"10px 14px",fontFamily:T.sans,fontSize:13,color:T.orange,fontWeight:600}}>⚠️ Posible duplicado detectado</div>}
+        {session.isAdmin&&(
+          <div>
+            <label style={lbl}>Trabajador</label>
+            <select value={trabajador} onChange={e=>setTrabajador(e.target.value)} style={{...inp}}>
+              {allWorkers.map(w=><option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={lbl}>Fecha</label>
+            <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <label style={lbl}>Horas <HTBadge type={ht}/></label>
+            <input type="number" value={horas} onChange={e=>setHoras(e.target.value)} step="0.5" min="0.5" max="24" style={inp}/>
+          </div>
+        </div>
+        <div style={{position:"relative"}}>
+          <label style={lbl}>Obra</label>
+          <input value={obraInput} onChange={e=>{setObraInput(e.target.value);setObra("");setShowObraSug(true);}} onFocus={()=>setShowObraSug(true)} onBlur={()=>setTimeout(()=>setShowObraSug(false),150)} placeholder="Nombre de la obra..." style={inp}/>
+          {showObraSug&&obraSugs.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,zIndex:200,boxShadow:T.shadowM,overflow:"hidden",marginTop:4}}>
+              {obraSugs.map(o=>(
+                <div key={o} onMouseDown={()=>{setObraInput(o);setObra(o);setShowObraSug(false);}} style={{padding:"10px 14px",fontFamily:T.sans,fontSize:13,color:T.text,cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>{o}</div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={lbl}>Subobra / Partida <span style={{fontWeight:400,color:T.text3}}>(opcional)</span></label>
+          <input value={subobra} onChange={e=>setSubobra(e.target.value)} placeholder="ej. Vestíbulo, Leds, Cables..." style={inp}/>
+          {subobraSugs.length>0&&subobra&&(
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+              {subobraSugs.map(s=><button key={s} onClick={()=>setSubobra(s)} style={{padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:T.bg3,fontFamily:T.sans,fontSize:11,color:T.text2,cursor:"pointer"}}>{s}</button>)}
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={lbl}>Notas <span style={{fontWeight:400,color:T.text3}}>(opcional)</span></label>
+          <textarea value={notas} onChange={e=>setNotas(e.target.value)} rows={2} placeholder="Observaciones..." style={{...inp,resize:"vertical"}}/>
+        </div>
+        {session.isAdmin&&(
+          <div>
+            <label style={lbl}>Tipo hora (override)</label>
+            <div style={{display:"flex",gap:6}}>
+              {["","n","e","f","s"].map(t=>(
+                <button key={t} onClick={()=>setTipoOverride(t)} style={{flex:1,padding:"8px 4px",borderRadius:10,border:`1px solid ${tipoOverride===t?T.gold:T.border}`,background:tipoOverride===t?T.goldDim:"transparent",fontFamily:T.sans,fontSize:12,fontWeight:700,color:tipoOverride===t?T.goldDark:T.text2,cursor:"pointer"}}>
+                  {t===""?"Auto":t==="n"?"Norm":t==="e"?"Extra":t==="f"?"Fest":"Sáb"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <Btn onClick={handleSave} style={{width:"100%",marginTop:4}}>Guardar parte</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── QUICK INPUT (WhatsApp parser) ────────────────────────────────────────────
+function QuickInput({data,session,festivos,onSaveMulti,toast}){
+  const [text,setText]=useState("");
+  const [parsed,setParsed]=useState([]);
+  const [err,setErr]=useState("");
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+
+  function parse(){
+    setErr("");
+    const lines=text.split("\n").map(l=>l.trim()).filter(l=>l);
+    const results=[];
+    const dateRe=/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/;
+    const horasRe=/(\d+(?:[.,]\d+)?)\s*h/i;
+    for(const line of lines){
+      let fecha=today();
+      const dm=line.match(dateRe);
+      if(dm){const d=+dm[1],m=+dm[2],y=dm[3]?+dm[3]:new Date().getFullYear();fecha=`${y<100?2000+y:y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
+      const hm=line.match(horasRe);
+      const horas=hm?+hm[1].replace(",","."):9;
+      let trabajador=session.isAdmin?"":session.name;
+      if(session.isAdmin){for(const w of allWorkers){if(line.toLowerCase().includes(w.toLowerCase())){trabajador=w;break;}}}
+      const obraMatch=line.match(/obra[:\s]+([^,\n]+)/i)||line.match(/-\s*([A-ZÀ-Ú][^,\n0-9]+)/);
+      const obra=obraMatch?obraMatch[1].trim():"";
+      if(!trabajador||!obra)continue;
+      results.push({trabajador,fecha,horas,obra,subobra:"",notas:"",_line:line});
+    }
+    if(results.length===0){setErr("No se detectaron entradas válidas");return;}
+    setParsed(results);
+  }
+
+  const [soloNuevos,setSoloNuevos]=useState(false);
+
+  function isDup(e){return data.some(x=>x.trabajador===e.trabajador&&x.fecha===e.fecha&&x.obra===e.obra&&((!x.subobra&&!e.subobra)||(x.subobra===e.subobra)));}
+
+  function handleSave(){
+    const toSave=soloNuevos?parsed.filter(e=>!isDup(e)):parsed;
+    const dups=parsed.filter(e=>isDup(e));
+    if(!soloNuevos&&dups.length>0&&!confirm(`Hay ${dups.length} entrada${dups.length>1?"s":""} duplicada${dups.length>1?"s":""}. ¿Guardar igualmente?`))return;
+    onSaveMulti(toSave);
+    setText("");setParsed([]);
+  }
+
+  return(
+    <div style={{paddingBottom:100}}>
+      <Header title="Entrada rápida" sub="Pega texto de WhatsApp"/>
+      <div style={{padding:"16px 16px 0"}}>
+        <textarea value={text} onChange={e=>setText(e.target.value)} rows={8} placeholder={"Pega aquí el texto del grupo de WhatsApp...\n\nEjemplo:\n03/03 Txema obra: Carles Riba 3h\n03/03 Javi obra: Av. Diagonal 9h"} style={{width:"100%",padding:"12px 14px",borderRadius:14,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.mono,fontSize:12,color:T.text,outline:"none",resize:"vertical"}}/>
+        {err&&<div style={{color:T.red,fontFamily:T.sans,fontSize:13,marginTop:6,fontWeight:600}}>{err}</div>}
+        <Btn onClick={parse} style={{width:"100%",marginTop:10}} variant="secondary">Analizar texto</Btn>
+        {parsed.length>0&&(()=>{
+          const numDups=parsed.filter(e=>isDup(e)).length;
+          const numNuevos=parsed.length-numDups;
+          return(
+          <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"14px 0 8px"}}>
+              <span style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.text2,textTransform:"uppercase",letterSpacing:".06em"}}>{parsed.length} entradas detectadas</span>
+              {numDups>0&&<button onClick={()=>setSoloNuevos(s=>!s)} style={{background:soloNuevos?T.goldDim:"transparent",border:`1px solid ${soloNuevos?T.goldBorder:T.border}`,borderRadius:8,padding:"4px 10px",fontFamily:T.sans,fontSize:11,fontWeight:700,color:soloNuevos?T.goldDark:T.text2,cursor:"pointer"}}>Solo nuevos ({numNuevos})</button>}
+            </div>
+            {numDups>0&&<div style={{background:T.orangeDim,border:`1px solid rgba(201,122,46,.3)`,borderRadius:10,padding:"8px 12px",fontFamily:T.sans,fontSize:12,color:T.orange,fontWeight:600,marginBottom:8}}>⚠️ {numDups} duplicado{numDups>1?"s":""} detectado{numDups>1?"s":""}</div>}
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+              {parsed.map((e,i)=>{
+                const dup=isDup(e);
+                if(soloNuevos&&dup)return null;
+                return(
+                <div key={i} style={{background:dup?T.orangeDim:T.bg2,borderRadius:10,padding:"9px 12px",border:`1px solid ${dup?"rgba(201,122,46,.3)":T.border}`,opacity:dup&&soloNuevos?0.4:1}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,display:"flex",justifyContent:"space-between"}}>
+                    <span>{e.trabajador} · {e.obra}</span>
+                    {dup&&<span style={{color:T.orange,fontSize:11}}>⚠️ dup</span>}
+                  </div>
+                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{e.fecha} · {e.horas}h</div>
+                </div>
+                );
+              })}
+            </div>
+            <Btn onClick={handleSave} style={{width:"100%"}}>Guardar {soloNuevos?numNuevos:parsed.length} entradas</Btn>
+          </>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+// ─── EQUIPO LIST ──────────────────────────────────────────────────────────────
+function EquipoList({data,festivos,session,ausencias,onSelectWorker}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+  const mesData=data.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  const mnArr=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Equipo" sub={`${mnArr[mo]} ${yr}`}/>
+      <div style={{padding:"12px 14px 0",display:"flex",flexDirection:"column",gap:10}}>
+        {allWorkers.map((w,i)=>{
+          const wData=mesData.filter(e=>e.trabajador===w);
+          const totalH=wData.reduce((s,e)=>s+e.horas,0);
+          const obras=[...new Set(wData.map(e=>e.obra))];
+          const ausW=(ausencias||[]).filter(a=>a.trabajador===w&&a.estado==="aprobada"&&a.fechaInicio>=`${yr}-${String(mo+1).padStart(2,"0")}-01`);
+          return(
+            <div key={w} onClick={()=>onSelectWorker(w)} style={{background:T.bg2,borderRadius:16,padding:"14px 16px",border:`1px solid ${T.border}`,boxShadow:T.shadow,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+              <Avatar name={w} size={48} color={WC[i%WC.length]}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:T.sans,fontWeight:800,fontSize:15,color:T.text}}>{w}</div>
+                <div style={{fontFamily:T.sans,fontSize:12,color:T.text2,marginTop:2}}>{obras.length} obra{obras.length!==1?"s":""} · {wData.length} parte{wData.length!==1?"s":""}</div>
+                {ausW.length>0&&<div style={{fontFamily:T.sans,fontSize:11,color:T.orange,marginTop:2}}>📅 {ausW.length} ausencia{ausW.length>1?"s":""} aprobadas</div>}
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontFamily:T.display,fontSize:22,fontWeight:900,color:totalH>0?T.goldDark:T.text3}}>{totalH}h</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── OBRAS LIST ───────────────────────────────────────────────────────────────
+function ObrasList({data,session,onSelectObra}){
+  const [search,setSearch]=useState("");
+  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const filtered=allObras.filter(o=>o.toLowerCase().includes(search.toLowerCase()));
+  const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+  const mesData=data.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Obras" sub={`${allObras.length} en total`}/>
+      <div style={{padding:"12px 14px 0"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar obra..." style={{width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none",marginBottom:12}}/>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filtered.map(o=>{
+            const oData=data.filter(e=>e.obra===o);
+            const totalH=oData.reduce((s,e)=>s+e.horas,0);
+            const workers=[...new Set(oData.map(e=>e.trabajador))];
+            const hMes=mesData.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
+            const isActive=mesData.some(e=>e.obra===o);
+            return(
+              <div key={o} onClick={()=>onSelectObra(o)} style={{background:T.bg2,borderRadius:14,padding:"13px 16px",border:`1px solid ${isActive?T.goldBorder:T.border}`,display:"flex",gap:12,cursor:"pointer",boxShadow:T.shadow,alignItems:"center"}}>
+                <div style={{width:12,height:12,borderRadius:"50%",background:obraColor(o,allObras),flexShrink:0,marginTop:2}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:T.sans,fontWeight:700,fontSize:14,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o}</div>
+                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2,marginTop:2}}>{workers.length} trabajador{workers.length!==1?"es":""} · {oData.length} partes · {totalH}h total</div>
+                  {isActive&&<div style={{fontFamily:T.sans,fontSize:11,color:T.goldDark,marginTop:2,fontWeight:600}}>Activa este mes · {hMes}h</div>}
+                </div>
+                <span style={{color:T.text3,fontSize:16}}>›</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PARTE MODAL ──────────────────────────────────────────────────────────────
+function ParteModal({parte,data,festivos,session,onClose,onDelete,onEdit}){
+  const ht=getHT(parte,festivos);
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const idx=data.findIndex(e=>e.id===parte.id);
+  const prev=idx>0?data[idx-1]:null;
+  const next=idx<data.length-1?data[idx+1]:null;
+  const [confirmDel,setConfirmDel]=useState(false);
+  return(
+    <Modal title="Detalle parte" onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
+        <Avatar name={parte.trabajador} size={48} color={WC[allWorkers.indexOf(parte.trabajador)%WC.length]}/>
+        <div>
+          <div style={{fontFamily:T.sans,fontWeight:800,fontSize:16,color:T.text}}>{parte.trabajador}</div>
+          <div style={{fontFamily:T.sans,fontSize:12,color:T.text2}}>{parte.fecha} · <HTBadge type={ht}/></div>
+        </div>
+        <div style={{marginLeft:"auto",fontFamily:T.display,fontSize:28,fontWeight:900,color:T.text}}>{parte.horas}h</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+        <Row label="Obra" value={parte.obra}/>
+        {parte.subobra&&<Row label="Subobra" value={parte.subobra}/>}
+        {parte.notas&&<Row label="Notas" value={parte.notas}/>}
+        {parte.tipoOverride&&<Row label="Tipo override" value={parte.tipoOverride}/>}
+        <Row label="ID" value={`#${parte.id}`}/>
+      </div>
+      {session.isAdmin&&(
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <Btn variant="secondary" small style={{flex:1}} onClick={()=>onEdit(parte)}>Editar</Btn>
+          {!confirmDel
+            ?<Btn variant="danger" small style={{flex:1}} onClick={()=>setConfirmDel(true)}>Eliminar</Btn>
+            :<div style={{flex:1,display:"flex",gap:6}}>
+              <Btn variant="danger" small style={{flex:1}} onClick={()=>onDelete(parte.id)}>¿Seguro?</Btn>
+              <Btn variant="ghost" small style={{flex:1}} onClick={()=>setConfirmDel(false)}>No</Btn>
+            </div>
+          }
+        </div>
+      )}
+      <div style={{display:"flex",gap:8}}>
+        <Btn variant="ghost" small style={{flex:1}} onClick={()=>prev&&onEdit(prev)} disabled={!prev}>← Anterior</Btn>
+        <Btn variant="ghost" small style={{flex:1}} onClick={()=>next&&onEdit(next)} disabled={!next}>Siguiente →</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function Row({label,value}){
+  return(
+    <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+      <span style={{fontFamily:T.sans,fontSize:12,color:T.text2,fontWeight:600,minWidth:70,textTransform:"uppercase",letterSpacing:".04em",paddingTop:2}}>{label}</span>
+      <span style={{fontFamily:T.sans,fontSize:14,color:T.text,fontWeight:500,flex:1}}>{value}</span>
+    </div>
+  );
+}
+
+// ─── ARCHIVOS SUPABASE ────────────────────────────────────────────────────────
+function ArchivosObra({obraName}){
+  const key=obraKey(obraName);
+  const [files,setFiles]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [err,setErr]=useState("");
+  const [cat,setCat]=useState("planos"); // planos | fotos | otros
+  const configured=!!(SUPABASE_URL&&SUPABASE_KEY);
+
+  function fileCategory(name){
+    if(/\.(jpg|jpeg|png|gif|webp)$/i.test(name))return"fotos";
+    if(/\.(pdf)$/i.test(name))return"planos";
+    return"otros";
+  }
+
+  useEffect(()=>{
+    if(!configured)return;
+    setLoading(true);
+    supa.storage.list(key).then(({data})=>{setFiles(data||[]);setLoading(false);}).catch(()=>setLoading(false));
+  },[key]);
+
+  async function handleUpload(e){
+    const file=e.target.files[0];if(!file)return;
+    setUploading(true);setErr("");
+    const {error}=await supa.storage.upload(key,file);
+    if(error){setErr("Error al subir: "+error);setUploading(false);return;}
+    const {data}=await supa.storage.list(key);
+    setFiles(data||[]);setUploading(false);
+    // Cambiar a la pestaña correspondiente
+    const c=fileCategory(file.name);setCat(c);
+  }
+
+  async function handleDelete(path){
+    
+    await supa.storage.remove(path);
+    setFiles(f=>f.filter(x=>x.name!==path.split("/").pop()));
+  }
+
+  if(!configured)return(
+    <div style={{background:T.bg3,borderRadius:12,padding:"12px 14px",fontFamily:T.sans,fontSize:13,color:T.text2}}>
+      Supabase no configurado — los archivos por obra no están disponibles.
+    </div>
+  );
+
+  const cats=["planos","fotos","otros"];
+  const catLabel={"planos":"📐 Planos","fotos":"📷 Fotos","otros":"📁 Otros"};
+  const catAccept={"planos":".pdf","fotos":"image/*","otros":"*"};
+  const filtered=files.filter(f=>fileCategory(f.name)===cat);
+
+  return(
+    <div>
+      {/* Pestañas */}
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {cats.map(c=>{
+          const count=files.filter(f=>fileCategory(f.name)===c).length;
+          const active=cat===c;
+          return(
+            <button key={c} onClick={()=>setCat(c)} style={{flex:1,padding:"7px 4px",borderRadius:10,border:`1px solid ${active?T.goldBorder:T.border}`,background:active?T.goldDim:T.bg3,fontFamily:T.sans,fontSize:12,fontWeight:active?700:500,color:active?T.goldDark:T.text2,cursor:"pointer"}}>
+              {catLabel[c]}{count>0?` (${count})`:""}</button>
+          );
+        })}
+      </div>
+      {/* Botón subir + error */}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+        <label style={{background:T.goldDim,border:`1px solid ${T.goldBorder}`,borderRadius:10,padding:"6px 14px",fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.goldDark,cursor:"pointer"}}>
+          {uploading?"Subiendo...":"+ Subir"}
+          <input type="file" style={{display:"none"}} onChange={handleUpload} accept={catAccept[cat]}/>
+        </label>
+      </div>
+      {err&&<div style={{color:T.red,fontFamily:T.sans,fontSize:12,marginBottom:8}}>{err}</div>}
+      {loading&&<div style={{fontFamily:T.sans,fontSize:13,color:T.text3}}>Cargando...</div>}
+      {!loading&&filtered.length===0&&<div style={{fontFamily:T.sans,fontSize:13,color:T.text3,padding:"12px 0"}}>Sin {catLabel[cat].split(" ")[1].toLowerCase()}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {filtered.map(f=>{
+          const path=`${key}/${f.name}`;
+          const url=supa.storage.publicUrl(path);
+          const isImg=cat==="fotos";
+          return(
+            <div key={f.name} style={{background:T.bg3,borderRadius:10,padding:"9px 12px",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:18}}>{cat==="planos"?"📐":cat==="fotos"?"🖼":"📁"}</span>
+              <a href={url} target="_blank" rel="noopener noreferrer" style={{flex:1,fontFamily:T.sans,fontSize:12,color:T.blue,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</a>
+              <button onClick={()=>handleDelete(path)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:16,padding:"0 4px"}}>×</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── PDF FORM (fuera de SubobraGroup para evitar re-mount) ───────────────────
+function PDFForm({obraName,subobra,entries,festivos,fechaIni,fechaFin,total,obrasMeta,setObrasMeta,onClose}){
+  const metaKey=obraKey(obraName);
+  const meta=(obrasMeta&&obrasMeta[metaKey])||{};
+  const [dir,setDir]=useState(meta.direccion||"");
+  const [trabajos,setTrabajos]=useState("");
+  const [materiales,setMateriales]=useState("");
+  const workers=[...new Set(entries.map(e=>e.trabajador))];
+
+  function handleGenerar(){
+    if(dir&&dir!==meta.direccion&&setObrasMeta){
+      const upd={...obrasMeta,[metaKey]:{...meta,direccion:dir}};
+      setObrasMeta(upd);localStorage.setItem("wk_obras_meta",JSON.stringify(upd));
+    }
+    const grouped={};
+    entries.forEach(e=>{if(!grouped[e.trabajador])grouped[e.trabajador]=[];grouped[e.trabajador].push(e);});
+    const css=`
+      *{box-sizing:border-box;}
+      body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:0;padding:0;}
+      .header{background:#1a1612;color:#fff;padding:18px 28px;display:flex;justify-content:space-between;align-items:flex-start;}
+      .htitle{font-size:20px;font-weight:bold;letter-spacing:-.01em;margin-bottom:3px;}
+      .hsub{font-size:11px;opacity:.6;}
+      .hdate{font-size:11px;opacity:.5;text-align:right;margin-top:4px;}
+      .content{padding:22px 28px;}
+      .infobox{background:#f5f0e8;border-radius:8px;padding:14px 16px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+      .irow{display:flex;flex-direction:column;gap:2px;}
+      .ilabel{font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:.06em;color:#7a6e5f;}
+      .ivalue{font-size:13px;color:#1a1612;font-weight:500;}
+      .section{margin-bottom:18px;}
+      .shead{background:#eee9df;border-left:4px solid #c9a84c;padding:8px 14px;font-weight:bold;font-size:13px;display:flex;justify-content:space-between;align-items:center;}
+      .shead span{font-weight:normal;font-size:11px;color:#7a6e5f;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      th{background:#f5f0e8;padding:6px 10px;text-align:left;font-weight:bold;color:#7a6e5f;text-transform:uppercase;font-size:10px;letter-spacing:.04em;}
+      td{padding:7px 10px;border-bottom:1px solid #eee9df;color:#1a1612;}
+      tr:last-child td{border-bottom:none;}
+      .totrow td{font-weight:bold;background:#f5f0e8;border-top:2px solid #c9a84c;}
+      .textblock{background:#faf8f3;border:1px solid #eee9df;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;white-space:pre-wrap;margin-top:6px;}
+      .footer{margin-top:28px;padding-top:14px;border-top:2px solid #eee9df;display:flex;justify-content:space-between;font-size:10px;color:#b5a898;}
+      .printbtn{display:block;width:100%;margin:24px 0 8px;background:#1a1612;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;letter-spacing:.02em;}
+      @media print{.printbtn{display:none;}}
+    `;
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Parte ${obraName}</title><style>${css}</style></head><body>
+      <div class="header">
+        <div>
+          <div class="htitle">RIBASESEDOS · ${obraName}${subobra?` · ${subobra}`:""}</div>
+          <div class="hsub">Parte de trabajo${dir?` · ${dir}`:""}</div>
+        </div>
+        <div class="hdate">${new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
+      </div>
+      <div class="content">
+        <div class="infobox">
+          <div class="irow"><span class="ilabel">Obra</span><span class="ivalue">${obraName}</span></div>
+          ${subobra?`<div class="irow"><span class="ilabel">Partida</span><span class="ivalue">${subobra}</span></div>`:""}
+          <div class="irow"><span class="ilabel">Período</span><span class="ivalue">${fechaIni} → ${fechaFin}</span></div>
+          <div class="irow"><span class="ilabel">Total horas</span><span class="ivalue" style="color:#a8863a;font-weight:bold;font-size:15px;">${total}h</span></div>
+          <div class="irow"><span class="ilabel">Trabajadores</span><span class="ivalue">${workers.length}</span></div>
+          <div class="irow"><span class="ilabel">Partes</span><span class="ivalue">${entries.length}</span></div>
+          ${dir?`<div class="irow" style="grid-column:1/-1"><span class="ilabel">Dirección</span><span class="ivalue">${dir}</span></div>`:""}
+        </div>
+        ${trabajos?`<div class="section"><div class="shead">Trabajos realizados</div><div class="textblock">${trabajos}</div></div>`:""}
+        ${materiales?`<div class="section"><div class="shead">Materiales utilizados</div><div class="textblock">${materiales}</div></div>`:""}
+        ${Object.entries(grouped).map(([w,es])=>{
+          const wTotal=es.reduce((s,e)=>s+e.horas,0);
+          return`<div class="section"><div class="shead">${w} <span>${wTotal}h · ${es.length} parte${es.length!==1?"s":""}</span></div>
+            <table><tr><th>Fecha</th><th>Horas</th><th>Tipo</th><th>Notas</th></tr>
+            ${[...es].sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>`<tr><td>${e.fecha}</td><td style="font-weight:bold;">${e.horas}h</td><td>${getHT(e,festivos)==="n"?"Normal":getHT(e,festivos)==="e"?"Extra":getHT(e,festivos)==="f"?"Festivo":"Sábado"}</td><td style="color:#7a6e5f;">${e.notas||"—"}</td></tr>`).join("")}
+            </table></div>`;
+        }).join("")}
+        <table><tr class="totrow"><td colspan="3" style="font-size:13px;">TOTAL HORAS</td><td style="font-size:15px;color:#a8863a;">${total}h</td></tr></table>
+        <div class="footer"><span>Ribasesedos · Grup Ese Dos</span><span>Generado: ${new Date().toLocaleString("es-ES")}</span></div>
+      </div>
+
+    </body></html>`;
+    const operarios=[...new Set(entries.map(e=>e.trabajador))].map(nombrePDF).join(" / ");
+    const fechasUnicas=[...new Set(entries.map(e=>e.fecha))].sort();
+    const fechasStr=fechasUnicas.map(f=>new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"})).join(" y ");
+    const horasPorDia=fechasUnicas.map(f=>{
+      const h=entries.filter(e=>e.fecha===f).reduce((s,e)=>s+e.horas,0);
+      const fLabel=new Date(f+"T12:00:00").toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit"});
+      return h+"h ("+fLabel+")";
+    });
+    const horasStr=total+"h totales"+(horasPorDia.length>1?" — "+horasPorDia.join(" + "):"");
+    generarPDFSimple(obraName,subobra,dir,operarios,fechasStr,horasStr,trabajos,materiales);
+    onClose();
+  }
+
+  const inp={width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none"};
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5,display:"block"};
+  return(
+    <Modal title="Datos del parte" onClose={onClose}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:T.bg3,borderRadius:12,padding:"10px 14px",fontFamily:T.sans,fontSize:12,color:T.text2}}>
+          <strong style={{color:T.text}}>{obraName}{subobra?` · ${subobra}`:""}</strong><br/>
+          Período: {fechaIni} → {fechaFin} · {total}h · {entries.length} partes
+        </div>
+        <div>
+          <label style={lbl}>Dirección de la obra</label>
+          <input value={dir} onChange={e=>setDir(e.target.value)} placeholder="Calle, número, ciudad..." style={inp}/>
+        </div>
+        <div>
+          <label style={lbl}>Trabajos realizados</label>
+          <textarea value={trabajos} onChange={e=>setTrabajos(e.target.value)} rows={3} placeholder="Describe los trabajos realizados..." style={{...inp,resize:"vertical"}}/>
+        </div>
+        <div>
+          <label style={lbl}>Materiales utilizados</label>
+          <textarea value={materiales} onChange={e=>setMateriales(e.target.value)} rows={3} placeholder="Lista de materiales..." style={{...inp,resize:"vertical"}}/>
+        </div>
+        <Btn onClick={handleGenerar} style={{width:"100%"}}>🖨 Generar PDF</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── SUBOBRA GROUP ────────────────────────────────────────────────────────────
+function SubobraGroup({obraName,subobra,entries,festivos,adminOverrides,obrasMeta,setObrasMeta}){
+  const [open,setOpen]=useState(false);
+  const [showPDFForm,setShowPDFForm]=useState(false);
+  const total=entries.reduce((s,e)=>s+e.horas,0);
+  const workers=[...new Set(entries.map(e=>e.trabajador))];
+  const fechas=entries.map(e=>e.fecha).sort();
+  const fechaIni=fechas[0]||"";
+  const fechaFin=fechas[fechas.length-1]||"";
+
+  return(
+    <>
+    <div style={{background:T.bg2,borderRadius:14,border:`1px solid ${T.border}`,marginBottom:10,overflow:"hidden",boxShadow:T.shadow}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:T.sans,fontWeight:800,fontSize:14,color:T.text}}>{subobra||"General"}</div>
+          <div style={{fontFamily:T.sans,fontSize:12,color:T.text2}}>{workers.length} trabajadores · {entries.length} partes</div>
+        </div>
+        <div style={{fontFamily:T.display,fontSize:18,fontWeight:900,color:T.goldDark}}>{total}h</div>
+        <span style={{color:T.text3,fontSize:14,transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>▼</span>
+      </div>
+      {open&&(
+        <div style={{borderTop:`1px solid ${T.border}`,padding:"12px 16px"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+            {entries.map(e=>(
+              <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",background:T.bg3,borderRadius:10}}>
+                <Avatar name={e.trabajador} size={28}/>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text}}>{e.trabajador}</div>
+                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{e.fecha}</div>
+                </div>
+                <div style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:T.text}}>{e.horas}h</div>
+                <HTBadge type={getHT(e,festivos)}/>
+              </div>
+            ))}
+          </div>
+          <Btn variant="secondary" small onClick={()=>setShowPDFForm(true)} style={{width:"100%"}}>🖨 Generar PDF parte</Btn>
+        </div>
+      )}
+    </div>
+    {showPDFForm&&(
+      <PDFForm
+        obraName={obraName} subobra={subobra} entries={entries} festivos={festivos}
+        fechaIni={fechaIni} fechaFin={fechaFin} total={total}
+        obrasMeta={obrasMeta} setObrasMeta={setObrasMeta}
+        onClose={()=>setShowPDFForm(false)}
+      />
+    )}
+    </>
+  );
+}
+
+// ─── OBRA MODAL ───────────────────────────────────────────────────────────────
+function ObraModal({obraName,data,festivos,adminOverrides,session,onClose,obrasMeta,setObrasMeta}){
+  const oData=data.filter(e=>e.obra===obraName);
+  const subobras=[...new Set(oData.map(e=>e.subobra||""))];
+  const hasSubobras=subobras.some(s=>s!=="");
+  const totalH=oData.reduce((s,e)=>s+e.horas,0);
+  const workers=[...new Set(oData.map(e=>e.trabajador))];
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const [activeTab,setActiveTab]=useState("resumen");
+
+  const workerStats=workers.map(w=>{
+    const we=oData.filter(e=>e.trabajador===w);
+    return{name:w,horas:we.reduce((s,e)=>s+e.horas,0),partes:we.length};
+  }).sort((a,b)=>b.horas-a.horas);
+
+  return(
+    <Modal title={obraName} onClose={onClose}>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <StatBox label="Total horas" value={`${totalH}h`} color={T.goldDark}/>
+        <StatBox label="Trabajadores" value={workers.length}/>
+        <StatBox label="Partes" value={oData.length}/>
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:14,borderBottom:`1px solid ${T.border}`,paddingBottom:10}}>
+        {["resumen","subobras","archivos"].map(t=>(
+          <button key={t} onClick={()=>setActiveTab(t)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${activeTab===t?T.gold:T.border}`,background:activeTab===t?T.goldDim:"transparent",fontFamily:T.sans,fontSize:12,fontWeight:600,color:activeTab===t?T.goldDark:T.text2,cursor:"pointer"}}>
+            {t==="resumen"?"Resumen":t==="subobras"?"Subobras":"Archivos"}
+          </button>
+        ))}
+      </div>
+      {activeTab==="resumen"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {workerStats.map(w=>(
+            <div key={w.name} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:T.bg3,borderRadius:12}}>
+              <Avatar name={w.name} size={36} color={WC[allWorkers.indexOf(w.name)%WC.length]}/>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.text}}>{w.name}</div>
+                <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>{w.partes} partes</div>
+              </div>
+              <div style={{fontFamily:T.display,fontSize:18,fontWeight:900,color:T.goldDark}}>{w.horas}h</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {activeTab==="subobras"&&(
+        hasSubobras
+          ? subobras.map(s=><SubobraGroup key={s||"__"} obraName={obraName} subobra={s} entries={oData.filter(e=>(e.subobra||"")===s)} festivos={festivos} adminOverrides={adminOverrides} obrasMeta={obrasMeta} setObrasMeta={setObrasMeta}/>)
+          : <SubobraGroup obraName={obraName} subobra="" entries={oData} festivos={festivos} adminOverrides={adminOverrides} obrasMeta={obrasMeta} setObrasMeta={setObrasMeta}/>
+      )}
+      {activeTab==="archivos"&&<ArchivosObra obraName={obraName}/>}
+    </Modal>
+  );
+}
+
+// ─── WORKER MODAL ─────────────────────────────────────────────────────────────
+function WorkerModal({workerName,data,festivos,adminOverrides,session,ausencias,onClose}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const wData=data.filter(e=>e.trabajador===workerName);
+  const totalH=wData.reduce((s,e)=>s+e.horas,0);
+  const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+  const mesMio=wData.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  const hMes=mesMio.reduce((s,e)=>s+e.horas,0);
+  const obras=[...new Set(wData.map(e=>e.obra))];
+  const ausW=(ausencias||[]).filter(a=>a.trabajador===workerName).slice(-5).reverse();
+
+  function generatePDF(){
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+    const W=210,PL=15,PR=15,CW=W-PL-PR;
+    doc.setFillColor(26,22,18);doc.rect(0,0,W,22,"F");
+    doc.setTextColor(255,255,255);doc.setFontSize(14);doc.setFont("helvetica","bold");
+    doc.text("RIBASESEDOS · "+workerName,PL,10);
+    doc.setFontSize(8);doc.setFont("helvetica","normal");
+    doc.text("Informe de horas · "+new Date().toLocaleDateString("es-ES"),PL,16);
+    const sorted=[...wData].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const rows=sorted.map(e=>[e.fecha,e.obra,e.subobra||"",e.horas+"h",getHT(e,festivos)==="n"?"Normal":getHT(e,festivos)==="e"?"Extra":getHT(e,festivos)==="f"?"Festivo":"Sábado",e.notas||"—"]);
+    doc.autoTable({
+      startY:28,head:[["Fecha","Obra","Subobra","Horas","Tipo","Notas"]],body:rows,
+      margin:{left:PL,right:PR},
+      styles:{fontSize:8,cellPadding:2,textColor:[26,22,18]},
+      headStyles:{fillColor:[245,240,232],textColor:[122,110,95],fontStyle:"bold",fontSize:7},
+      foot:[["","","TOTAL",totalH+"h","",""]],footStyles:{fillColor:[245,240,232],fontStyle:"bold",textColor:[168,134,58]},
+    });
+    mostrarPDF(doc.output("blob"), "Informe "+workerName);
+  }
+
+  return(
+    <Modal title={workerName} onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
+        <Avatar name={workerName} size={56} color={WC[allWorkers.indexOf(workerName)%WC.length]}/>
+        <div>
+          <div style={{fontFamily:T.display,fontSize:20,fontWeight:900,color:T.text}}>{workerName}</div>
+          <div style={{fontFamily:T.sans,fontSize:12,color:T.text2}}>{obras.length} obras · {wData.length} partes totales</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        <StatBox label="Horas mes" value={`${hMes}h`} color={T.goldDark}/>
+        <StatBox label="Total" value={`${totalH}h`}/>
+        <StatBox label="Obras mes" value={[...new Set(mesMio.map(e=>e.obra))].length}/>
+      </div>
+      <Section title="Obras (mes actual)">
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[...new Set(mesMio.map(e=>e.obra))].map(o=>{
+            const hO=mesMio.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
+            return(
+              <div key={o} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg3,borderRadius:10}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:obraColor(o,[])}}/>
+                <span style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,flex:1}}>{o}</span>
+                <span style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:T.text}}>{hO}h</span>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+      {ausW.length>0&&(
+        <Section title="Últimas ausencias">
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {ausW.map((a,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg3,borderRadius:10}}>
+                <span style={{fontFamily:T.sans,fontSize:12,color:T.text,flex:1}}>{a.tipo} · {a.fechaInicio}</span>
+                <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:a.estado==="aprobada"?T.green:a.estado==="rechazada"?T.red:T.orange}}>{a.estado}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      <Btn variant="secondary" style={{width:"100%",marginTop:8}} onClick={generatePDF}>🖨 PDF trabajador</Btn>
+    </Modal>
+  );
+}
+
+// ─── CALENDAR VIEW ────────────────────────────────────────────────────────────
+function CalendarView({data,festivos,session,ausencias,onSelectParte}){
+  const [cur,setCur]=useState(()=>{const n=new Date();return{y:n.getFullYear(),m:n.getMonth()};});
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const [fW,setFW]=useState(session.isAdmin?"todos":session.name);
+
+  const firstDay=new Date(cur.y,cur.m,1).getDay();
+  const daysInMonth=new Date(cur.y,cur.m+1,0).getDate();
+  const offset=(firstDay+6)%7; // lunes=0
+  const cells=Array(offset).fill(null).concat([...Array(daysInMonth)].map((_,i)=>i+1));
+  while(cells.length%7!==0)cells.push(null);
+
+  const mnArr=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const dias=["L","M","X","J","V","S","D"];
+
+  function cellData(d){
+    if(!d)return null;
+    const f=`${cur.y}-${String(cur.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const entries=data.filter(e=>e.fecha===f&&(fW==="todos"||e.trabajador===fW));
+    const fest=festivos.find(x=>x.fecha===f);
+    const isSun=new Date(f+"T12:00:00").getDay()===0;
+    const ausDay=(ausencias||[]).filter(a=>a.estado==="aprobada"&&a.fechaInicio<=f&&(a.fechaFin||a.fechaInicio)>=f&&(fW==="todos"||a.trabajador===fW));
+    return{f,entries,fest,isSun,ausDay};
+  }
+
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Calendario"
+        right={
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setCur(c=>{let m=c.m-1,y=c.y;if(m<0){m=11;y--;}return{y,m};})} style={{background:T.bg3,border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:16}}>←</button>
+            <button onClick={()=>setCur(c=>{let m=c.m+1,y=c.y;if(m>11){m=0;y++;}return{y,m};})} style={{background:T.bg3,border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:16}}>→</button>
+          </div>
+        }
+        sub={`${mnArr[cur.m]} ${cur.y}`}
+      />
+      {session.isAdmin&&(
+        <div style={{padding:"8px 14px 0",display:"flex",gap:6,overflowX:"auto",paddingBottom:6}}>
+          <Pill label="Todos" active={fW==="todos"} onClick={()=>setFW("todos")}/>
+          {allWorkers.map((w,i)=><Pill key={w} label={w.split(" ")[0]} active={fW===w} onClick={()=>setFW(w)} color={WC[i%WC.length]}/>)}
+        </div>
+      )}
+      <div style={{padding:"8px 10px 0"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+          {dias.map(d=><div key={d} style={{textAlign:"center",fontFamily:T.sans,fontSize:10,fontWeight:700,color:T.text2,padding:"4px 0"}}>{d}</div>)}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+          {cells.map((d,i)=>{
+            const cd=cellData(d);
+            if(!cd)return<div key={i}/>;
+            const isToday=cd.f===today();
+            const totalH=cd.entries.reduce((s,e)=>s+e.horas,0);
+            const hasFest=cd.fest||cd.isSun;
+            return(
+              <div key={i} onClick={()=>{}} style={{minHeight:52,borderRadius:10,padding:"4px 5px",background:isToday?T.goldDim:hasFest?T.redDim:T.bg2,border:`1px solid ${isToday?T.gold:hasFest?"rgba(192,57,43,.15)":T.border}`,cursor:"default",position:"relative"}}>
+                <div style={{fontFamily:T.sans,fontSize:11,fontWeight:isToday?900:600,color:isToday?T.goldDark:hasFest?T.red:T.text}}>{d}</div>
+                {totalH>0&&<div style={{fontFamily:T.mono,fontSize:10,fontWeight:800,color:T.goldDark,marginTop:2}}>{totalH}h</div>}
+                {cd.ausDay.length>0&&<div style={{fontSize:8,color:T.orange,marginTop:1}}>📅×{cd.ausDay.length}</div>}
+                {cd.fest&&<div style={{fontSize:8,color:T.red,marginTop:1,lineHeight:1.1,overflow:"hidden"}}>{cd.fest.nombre.slice(0,10)}</div>}
+                {cd.entries.length>0&&(
+                  <div style={{display:"flex",gap:1,flexWrap:"wrap",marginTop:2}}>
+                    {cd.entries.slice(0,4).map((e,j)=>(
+                      <div key={j} style={{width:6,height:6,borderRadius:"50%",background:WC[allWorkers.indexOf(e.trabajador)%WC.length]}}/>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── AUSENCIAS SCREEN ─────────────────────────────────────────────────────────
+function AusenciasScreen({session,ausencias,setAusencias,toast}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const [showForm,setShowForm]=useState(false);
+  const [tipo,setTipo]=useState("vacaciones");
+  const [fechaIni,setFechaIni]=useState(today());
+  const [fechaFin,setFechaFin]=useState(today());
+  const [motivo,setMotivo]=useState("");
+  const [tab,setTab]=useState(session.isAdmin?"pendientes":"mis");
+
+  const mis=(ausencias||[]).filter(a=>a.trabajador===session.name).slice().reverse();
+  const pendientes=(ausencias||[]).filter(a=>a.estado==="pendiente");
+  const todas=(ausencias||[]).slice().reverse();
+
+  function handleSolicitar(){
+    const nueva={id:Date.now(),trabajador:session.name,tipo,fechaInicio:fechaIni,fechaFin:fechaFin>=fechaIni?fechaFin:fechaIni,motivo:motivo.trim(),estado:"pendiente",createdAt:new Date().toISOString()};
+    const upd=[...ausencias,nueva];
+    setAusencias(upd);localStorage.setItem("wk_ausencias",JSON.stringify(upd));
+    toast("Solicitud enviada");setShowForm(false);setMotivo("");
+  }
+
+  function handleEstado(id,estado){
+    const upd=(ausencias||[]).map(a=>a.id===id?{...a,estado,reviewedAt:new Date().toISOString()}:a);
+    setAusencias(upd);localStorage.setItem("wk_ausencias",JSON.stringify(upd));
+    toast(estado==="aprobada"?"Ausencia aprobada":"Ausencia rechazada",estado==="aprobada"?"ok":"error");
+  }
+
+  function colorEstado(e){return e==="aprobada"?T.green:e==="rechazada"?T.red:T.orange;}
+  function bgEstado(e){return e==="aprobada"?T.greenDim:e==="rechazada"?T.redDim:T.orangeDim;}
+
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5,display:"block"};
+  const inp={width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none"};
+
+  const list=tab==="mis"?mis:tab==="pendientes"?pendientes:todas;
+
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Ausencias" right={<Btn small onClick={()=>setShowForm(true)}>+ Solicitar</Btn>}/>
+      {session.isAdmin&&(
+        <div style={{padding:"10px 14px 0",display:"flex",gap:6}}>
+          {["pendientes","todas"].map(t=><Pill key={t} label={t==="pendientes"?`Pendientes (${pendientes.length})`:"Todas"} active={tab===t} onClick={()=>setTab(t)}/>)}
+        </div>
+      )}
+      {!session.isAdmin&&(
+        <div style={{padding:"10px 14px 0",display:"flex",gap:6}}>
+          <Pill label="Mis solicitudes" active={tab==="mis"} onClick={()=>setTab("mis")}/>
+        </div>
+      )}
+      <div style={{padding:"12px 14px 0",display:"flex",flexDirection:"column",gap:8}}>
+        {list.map(a=>(
+          <div key={a.id} style={{background:T.bg2,borderRadius:14,padding:"13px 16px",border:`1px solid ${T.border}`,boxShadow:T.shadow}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
+              <Avatar name={a.trabajador} size={34} color={WC[allWorkers.indexOf(a.trabajador)%WC.length]}/>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.text}}>{a.trabajador} · {a.tipo==="vacaciones"?"Vacaciones":a.tipo==="fiesta"?"Día festivo":"Permiso/Modificación"}</div>
+                <div style={{fontFamily:T.sans,fontSize:12,color:T.text2}}>{a.fechaInicio}{a.fechaFin&&a.fechaFin!==a.fechaInicio?` → ${a.fechaFin}`:""}</div>
+                {a.motivo&&<div style={{fontFamily:T.sans,fontSize:11,color:T.text3,marginTop:2}}>"{a.motivo}"</div>}
+              </div>
+              <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:colorEstado(a.estado),background:bgEstado(a.estado),padding:"3px 10px",borderRadius:10,flexShrink:0}}>{a.estado}</span>
+            </div>
+            {session.isAdmin&&a.estado==="pendiente"&&(
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="secondary" small style={{flex:1,background:T.greenDim,color:T.green,border:`1px solid rgba(45,125,90,.2)`}} onClick={()=>handleEstado(a.id,"aprobada")}>✓ Aprobar</Btn>
+                <Btn variant="danger" small style={{flex:1}} onClick={()=>handleEstado(a.id,"rechazada")}>✕ Rechazar</Btn>
+              </div>
+            )}
+          </div>
+        ))}
+        {list.length===0&&<div style={{textAlign:"center",padding:"40px 20px",fontFamily:T.sans,color:T.text3}}>Sin solicitudes</div>}
+      </div>
+
+      {showForm&&(
+        <Modal title="Solicitar ausencia" onClose={()=>setShowForm(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div>
+              <label style={lbl}>Tipo</label>
+              <div style={{display:"flex",gap:6}}>
+                {["vacaciones","fiesta","permiso"].map(t=>(
+                  <button key={t} onClick={()=>setTipo(t)} style={{flex:1,padding:"9px 6px",borderRadius:10,border:`1px solid ${tipo===t?T.gold:T.border}`,background:tipo===t?T.goldDim:"transparent",fontFamily:T.sans,fontSize:12,fontWeight:700,color:tipo===t?T.goldDark:T.text2,cursor:"pointer"}}>
+                    {t==="vacaciones"?"Vacaciones":t==="fiesta"?"Festivo":"Permiso"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div><label style={lbl}>Desde</label><input type="date" value={fechaIni} onChange={e=>setFechaIni(e.target.value)} style={inp}/></div>
+              <div><label style={lbl}>Hasta</label><input type="date" value={fechaFin} onChange={e=>setFechaFin(e.target.value)} style={inp}/></div>
+            </div>
+            <div>
+              <label style={lbl}>Motivo <span style={{fontWeight:400,color:T.text3}}>(opcional)</span></label>
+              <textarea value={motivo} onChange={e=>setMotivo(e.target.value)} rows={2} style={{...inp,resize:"vertical"}} placeholder="Describe el motivo..."/>
+            </div>
+            <Btn onClick={handleSolicitar} style={{width:"100%"}}>Enviar solicitud</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── FICHAJE SCREEN ───────────────────────────────────────────────────────────
+function FichajeScreen({session,fichajes,setFichajes,toast}){
+  const [loading,setLoading]=useState(false);
+  const myF=(fichajes||[]).filter(f=>f.trabajador===session.name).slice(-10).reverse();
+  const lastEntry=myF[0];
+  const isOpen=lastEntry&&!lastEntry.salida;
+
+  async function getLocation(){
+    return new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),rej,{timeout:8000}));
+  }
+
+  async function handleFichar(){
+    setLoading(true);
+    try{
+      let loc=null;
+      try{loc=await getLocation();}catch(e){loc=null;}
+      if(isOpen){
+        const upd=(fichajes||[]).map(f=>f.id===lastEntry.id?{...f,salida:new Date().toISOString(),locSalida:loc}:f);
+        setFichajes(upd);localStorage.setItem("wk_fichajes",JSON.stringify(upd));
+        toast("Salida registrada");
+      } else {
+        const nuevo={id:Date.now(),trabajador:session.name,entrada:new Date().toISOString(),locEntrada:loc,salida:null};
+        const upd=[...fichajes,nuevo];
+        setFichajes(upd);localStorage.setItem("wk_fichajes",JSON.stringify(upd));
+        toast("Entrada registrada");
+      }
+    }catch(e){toast("Error al fichar","error");}
+    setLoading(false);
+  }
+
+  function duracion(entrada,salida){
+    const ms=(new Date(salida||new Date())-new Date(entrada));
+    const h=Math.floor(ms/3600000);const m=Math.floor((ms%3600000)/60000);
+    return`${h}h ${m}m`;
+  }
+
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Fichaje" sub={session.name}/>
+      <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+        <div style={{width:140,height:140,borderRadius:"50%",background:isOpen?T.greenDim:T.bg2,border:`3px solid ${isOpen?T.green:T.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",boxShadow:T.shadowM}}>
+          <div style={{fontSize:36}}>{isOpen?"🟢":"⭕"}</div>
+          <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:isOpen?T.green:T.text2,marginTop:4}}>{isOpen?"En obra":"Sin fichar"}</div>
+          {isOpen&&<div style={{fontFamily:T.mono,fontSize:11,color:T.green,marginTop:2}}>{duracion(lastEntry.entrada,null)}</div>}
+        </div>
+        <Btn onClick={handleFichar} disabled={loading} style={{width:"100%",maxWidth:280,background:isOpen?T.red:T.green}}>
+          {loading?"Procesando...":(isOpen?"Registrar salida":"Registrar entrada")}
+        </Btn>
+        <div style={{width:"100%",maxWidth:400}}>
+          <div style={{fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Últimos fichajes</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {myF.map(f=>(
+              <div key={f.id} style={{background:T.bg2,borderRadius:12,padding:"10px 14px",border:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text}}>🟢 {new Date(f.entrada).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
+                  {f.locEntrada&&<span style={{fontFamily:T.sans,fontSize:10,color:T.blue}}>📍</span>}
+                </div>
+                {f.salida&&(
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
+                    <span style={{fontFamily:T.sans,fontSize:12,color:T.text2}}>🔴 {new Date(f.salida).toLocaleString("es-ES",{hour:"2-digit",minute:"2-digit"})}</span>
+                    <span style={{fontFamily:T.mono,fontSize:12,fontWeight:700,color:T.goldDark}}>{duracion(f.entrada,f.salida)}</span>
+                  </div>
+                )}
+                {!f.salida&&<div style={{fontFamily:T.sans,fontSize:11,color:T.green,marginTop:4}}>En curso · {duracion(f.entrada,null)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CONFIG / ADMIN PANEL ─────────────────────────────────────────────────────
+function ConfigScreen({session,festivos,setFestivos,adminOverrides,setAdminOverrides,data,setData,accounts,setAccounts,toast,onLogout}){
+  const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+  const [tab,setTab]=useState(session.isAdmin?"festivos":"backup");
+  const [nuevaFecha,setNuevaFecha]=useState("");
+  const [nuevaNombre,setNuevaNombre]=useState("");
+  const [showWorkerCfg,setShowWorkerCfg]=useState(false);
+  const [selWorker,setSelWorker]=useState(null);
+  const [newPin,setNewPin]=useState("");
+  const [newPhone,setNewPhone]=useState("");
+
+  function addFestivo(){
+    if(!nuevaFecha){toast("Indica la fecha","error");return;}
+    if(festivos.some(f=>f.fecha===nuevaFecha)){toast("Ya existe","warning");return;}
+    const upd=[...festivos,{fecha:nuevaFecha,nombre:nuevaNombre||"Festivo"}].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    setFestivos(upd);localStorage.setItem("wk_fest",JSON.stringify(upd));
+    setNuevaFecha("");setNuevaNombre("");toast("Festivo añadido");
+  }
+  function removeFestivo(f){
+    const upd=festivos.filter(x=>x.fecha!==f.fecha);
+    setFestivos(upd);localStorage.setItem("wk_fest",JSON.stringify(upd));
+  }
+  function exportBackup(){
+    const bk={data,festivos,adminOverrides,accounts,ausencias:JSON.parse(localStorage.getItem("wk_ausencias")||"[]"),fichajes:JSON.parse(localStorage.getItem("wk_fichajes")||"[]"),exportedAt:new Date().toISOString(),version:3};
+    const blob=new Blob([JSON.stringify(bk,null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`workly_backup_${today()}.json`;a.click();
+    toast("Backup exportado");
+  }
+  function importBackup(e){
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const bk=JSON.parse(ev.target.result);
+        if(!bk.data||!Array.isArray(bk.data)){toast("Archivo inválido","error");return;}
+        
+        localStorage.setItem("wk_data",JSON.stringify(bk.data));
+        localStorage.setItem("wk_fest",JSON.stringify(bk.festivos||[]));
+        localStorage.setItem("wk_adm",JSON.stringify(bk.adminOverrides||{}));
+        localStorage.setItem("wk_accounts",JSON.stringify(bk.accounts||[]));
+        if(bk.ausencias)localStorage.setItem("wk_ausencias",JSON.stringify(bk.ausencias));
+        if(bk.fichajes)localStorage.setItem("wk_fichajes",JSON.stringify(bk.fichajes));
+        toast("Backup importado — recarga la página");
+        setTimeout(()=>window.location.reload(),1500);
+      }catch(err){toast("Error al parsear el backup","error");}
+    };
+    reader.readAsText(file);
+  }
+  function saveWorkerCfg(){
+    if(!selWorker)return;
+    let upd=[...accounts];
+    const idx=upd.findIndex(a=>a.name===selWorker);
+    if(idx>=0){if(newPin)upd[idx]={...upd[idx],pin:newPin};if(newPhone!==undefined)upd[idx]={...upd[idx],phone:newPhone};}
+    else{upd.push({name:selWorker,pin:newPin||"0000",phone:newPhone,deviceId:null});}
+    setAccounts(upd);localStorage.setItem("wk_accounts",JSON.stringify(upd));
+    toast("Trabajador actualizado");setShowWorkerCfg(false);setNewPin("");setNewPhone("");setSelWorker(null);
+  }
+  function unbindDevice(w){
+    const upd=accounts.map(a=>a.name===w?{...a,deviceId:null}:a);
+    setAccounts(upd);localStorage.setItem("wk_accounts",JSON.stringify(upd));
+    toast("Dispositivo desvinculado");
+  }
+
+  const inp={width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none"};
+  const lbl={fontFamily:T.sans,fontWeight:700,fontSize:12,color:T.text2,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5,display:"block"};
+
+  return(
+    <div style={{paddingBottom:80}}>
+      <Header title="Configuración"/>
+      {session.isAdmin&&(
+        <div style={{padding:"10px 14px 0",display:"flex",gap:6,overflowX:"auto",flexWrap:"wrap"}}>
+          {["festivos","obras","trabajadores","backup"].map(t=>(
+            <Pill key={t} label={t.charAt(0).toUpperCase()+t.slice(1)} active={tab===t} onClick={()=>setTab(t)}/>
+          ))}
+        </div>
+      )}
+      <div style={{padding:"14px 14px 0"}}>
+        {(tab==="backup"||!session.isAdmin)&&(
+          <Section title="Backup de datos">
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <Btn variant="secondary" style={{width:"100%"}} onClick={exportBackup}>📤 Exportar backup JSON</Btn>
+              <label style={{display:"block",width:"100%"}}>
+                <div style={{padding:"13px 20px",borderRadius:12,background:T.bg3,border:`1px solid ${T.border}`,fontFamily:T.sans,fontWeight:700,fontSize:15,color:T.text,textAlign:"center",cursor:"pointer"}}>📥 Importar backup JSON</div>
+                <input type="file" accept=".json" style={{display:"none"}} onChange={importBackup}/>
+              </label>
+              <div style={{fontFamily:T.sans,fontSize:12,color:T.text3}}>El backup incluye todos los partes, festivos, cuentas y ausencias. <strong>Importar reemplaza todos los datos actuales.</strong></div>
+            </div>
+          </Section>
+        )}
+        {tab==="festivos"&&session.isAdmin&&(
+          <Section title="Festivos">
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <input type="date" value={nuevaFecha} onChange={e=>setNuevaFecha(e.target.value)} style={inp}/>
+              <input value={nuevaNombre} onChange={e=>setNuevaNombre(e.target.value)} placeholder="Nombre" style={inp}/>
+            </div>
+            <Btn variant="secondary" small style={{width:"100%",marginBottom:12}} onClick={addFestivo}>+ Añadir festivo</Btn>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {festivos.map(f=>(
+                <div key={f.fecha} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg2,borderRadius:10,border:`1px solid ${T.border}`}}>
+                  <span style={{fontFamily:T.mono,fontSize:12,color:T.text,flex:0,whiteSpace:"nowrap"}}>{f.fecha}</span>
+                  <span style={{fontFamily:T.sans,fontSize:12,color:T.text,flex:1}}>{f.nombre}</span>
+                  <button onClick={()=>removeFestivo(f)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:16,padding:"0 4px"}}>×</button>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+        {tab==="obras"&&session.isAdmin&&(
+          <Section title="Override tipo hora por obra">
+            <div style={{fontFamily:T.sans,fontSize:12,color:T.text2,marginBottom:10}}>Fuerza que una obra se trate como Admin o Trabajo</div>
+            {[...new Set(data.map(e=>e.obra))].sort().map(o=>{
+              const k=normObra(o);
+              const cur=adminOverrides[k];
+              return(
+                <div key={o} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 12px",background:T.bg2,borderRadius:10,border:`1px solid ${T.border}`}}>
+                  <span style={{fontFamily:T.sans,fontSize:12,color:T.text,flex:1}}>{o}</span>
+                  {[undefined,true,false].map((v,i)=>(
+                    <button key={i} onClick={()=>{const upd={...adminOverrides};if(v===undefined)delete upd[k];else upd[k]=v;setAdminOverrides(upd);localStorage.setItem("wk_adm",JSON.stringify(upd));}} style={{padding:"3px 8px",borderRadius:8,border:`1px solid ${cur===v?T.gold:T.border}`,background:cur===v?T.goldDim:"transparent",fontFamily:T.sans,fontSize:10,fontWeight:700,color:cur===v?T.goldDark:T.text2,cursor:"pointer"}}>
+                      {v===undefined?"Auto":v===true?"Admin":"Trabajo"}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </Section>
+        )}
+        {tab==="trabajadores"&&session.isAdmin&&(
+          <Section title="Cuentas trabajadores">
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {allWorkers.filter(w=>w!==ADMIN_NAME).map((w,i)=>{
+                const acc=accounts.find(a=>a.name===w);
+                return(
+                  <div key={w} style={{background:T.bg2,borderRadius:12,padding:"12px 14px",border:`1px solid ${T.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:acc?.deviceId?8:0}}>
+                      <Avatar name={w} size={34} color={WC[i%WC.length]}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:T.sans,fontWeight:700,fontSize:13,color:T.text}}>{w}</div>
+                        <div style={{fontFamily:T.sans,fontSize:11,color:T.text2}}>PIN: {acc?.pin||"sin PIN"} {acc?.phone?`· 📱 ${acc.phone}`:""}</div>
+                      </div>
+                      <Btn variant="secondary" small onClick={()=>{setSelWorker(w);setNewPin(acc?.pin||"");setNewPhone(acc?.phone||"");setShowWorkerCfg(true);}}>Editar</Btn>
+                    </div>
+                    {acc?.deviceId&&(
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,padding:"6px 10px",background:T.bg3,borderRadius:8}}>
+                        <span style={{fontFamily:T.sans,fontSize:11,color:T.text2,flex:1}}>🔒 Dispositivo vinculado</span>
+                        <button onClick={()=>unbindDevice(w)} style={{background:"none",border:"none",cursor:"pointer",fontFamily:T.sans,fontSize:11,color:T.red,fontWeight:700}}>Desvincular</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+        {!session.isAdmin&&(
+          <div style={{marginTop:16}}>
+            <Btn variant="danger" style={{width:"100%"}} onClick={onLogout}>Cerrar sesión</Btn>
+          </div>
+        )}
+      </div>
+      {showWorkerCfg&&selWorker&&(
+        <Modal title={`Editar: ${selWorker}`} onClose={()=>setShowWorkerCfg(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div><label style={lbl}>Nuevo PIN (4 dígitos)</label><input value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\D/,"").slice(0,4))} placeholder="0000" style={inp} maxLength={4} type="tel"/></div>
+            <div><label style={lbl}>Teléfono (para WhatsApp)</label><input value={newPhone} onChange={e=>setNewPhone(e.target.value)} placeholder="+34 600 000 000" style={inp} type="tel"/></div>
+            <Btn onClick={saveWorkerCfg} style={{width:"100%"}}>Guardar</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+function App(){
+  const init=loadState();
+  const [data,setDataRaw]=useState(init.data);
+  const [festivos,setFestivosRaw]=useState(init.festivos);
+  const [adminOverrides,setAdminOverridesRaw]=useState(init.adminOverrides);
+  const [fichajes,setFichajesRaw]=useState(init.fichajes);
+  const [accounts,setAccountsRaw]=useState(init.accounts);
+  const [ausencias,setAusenciasRaw]=useState(init.ausencias);
+  const [obrasMeta,setObrasMetaRaw]=useState(()=>{try{return JSON.parse(localStorage.getItem("wk_obras_meta")||"{}");}catch(e){return{};}});
+  const [session,setSession]=useState(init.session);
+  const [tab,setTab]=useState("dashboard");
+  const [modalObra,setModalObra]=useState(null);
+  const [modalWorker,setModalWorker]=useState(null);
+  const [modalParte,setModalParte]=useState(null);
+  const [editParte,setEditParte]=useState(null);
+  const [prefillNuevo,setPrefillNuevo]=useState(null);
+  const [showQuick,setShowQuick]=useState(false);
+  const [showParteFormal,setShowParteFormal]=useState(false);
+  const [showFichaje,setShowFichaje]=useState(false);
+  const [showResumenPDF,setShowResumenPDF]=useState(false);
+  const [toastShow,toastEl]=useToast();
+
+  function setData(v){setDataRaw(v);localStorage.setItem("wk_data",JSON.stringify(v));}
+  function setFestivos(v){setFestivosRaw(v);localStorage.setItem("wk_fest",JSON.stringify(v));}
+  function setAdminOverrides(v){setAdminOverridesRaw(v);localStorage.setItem("wk_adm",JSON.stringify(v));}
+  function setFichajes(v){setFichajesRaw(v);localStorage.setItem("wk_fichajes",JSON.stringify(v));}
+  function setAccounts(v){setAccountsRaw(v);localStorage.setItem("wk_accounts",JSON.stringify(v));}
+  function setAusencias(v){setAusenciasRaw(v);localStorage.setItem("wk_ausencias",JSON.stringify(v));}
+  function setObrasMeta(v){setObrasMetaRaw(v);localStorage.setItem("wk_obras_meta",JSON.stringify(v));}
+
+  function handleLogin(s){
+    setSession(s);localStorage.setItem("wk_session",JSON.stringify(s));
+    setTab(s.isAdmin?"dashboard":"miperfil");
+  }
+  function handleLogout(){
+    setSession(null);localStorage.removeItem("wk_session");setTab("dashboard");
+  }
+
+  function handleSaveParte(e){
+    if(editParte){
+      const upd=data.map(x=>x.id===editParte.id?{...editParte,...e}:x);
+      setData(upd);toastShow("Parte actualizado");setEditParte(null);setModalParte(null);
+    } else {
+      const newId=Math.max(0,...data.map(x=>x.id))+1;
+      const upd=[...data,{...e,id:newId}];
+      setData(upd);toastShow("Parte guardado");
+    }
+    setTab("partes");setPrefillNuevo(null);
+  }
+  function handleSaveMulti(entries){
+    const maxId=Math.max(0,...data.map(x=>x.id));
+    const newEntries=entries.map((e,i)=>({...e,id:maxId+i+1}));
+    setData([...data,...newEntries]);
+    toastShow(`${newEntries.length} partes guardados`);setShowQuick(false);setTab("partes");
+  }
+  function handleDeleteParte(id){
+    setData(data.filter(e=>e.id!==id));toastShow("Parte eliminado","warning");setModalParte(null);
+  }
+
+  function generateResumenPDF(){
+    const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
+    const mesData=data.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+    const allW=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
+    const mnArr=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+    const W=210,PL=15,PR=15,CW=W-PL-PR;
+    doc.setFillColor(26,22,18);doc.rect(0,0,W,22,"F");
+    doc.setTextColor(255,255,255);doc.setFontSize(14);doc.setFont("helvetica","bold");
+    doc.text("RIBASESEDOS · Resumen mensual",PL,10);
+    doc.setFontSize(9);doc.setFont("helvetica","normal");
+    doc.text(mnArr[mo]+" "+yr,PL,16);
+    doc.text(new Date().toLocaleDateString("es-ES"),W-PR,16,{align:"right"});
+    let y=28;
+    allW.forEach(w=>{
+      const we=mesData.filter(e=>e.trabajador===w);if(we.length===0)return;
+      const th=we.reduce((s,e)=>s+e.horas,0);
+      if(y>240){doc.addPage();y=15;}
+      doc.setFillColor(238,233,223);doc.rect(PL,y,CW,8,"F");
+      doc.setDrawColor(201,168,76);doc.setLineWidth(0.8);doc.line(PL,y,PL,y+8);
+      doc.setTextColor(26,22,18);doc.setFontSize(10);doc.setFont("helvetica","bold");
+      doc.text(nombrePDF(w),PL+5,y+5.5);
+      doc.setTextColor(168,134,58);doc.text(th+"h",W-PR,y+5.5,{align:"right"});
+      y+=8;
+      const rows=[...we].sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>[e.fecha,e.obra,e.subobra||"",e.horas+"h",getHT(e,festivos)==="n"?"Normal":getHT(e,festivos)==="e"?"Extra":getHT(e,festivos)==="f"?"Festivo":"Sábado"]);
+      doc.autoTable({
+        startY:y,head:[["Fecha","Obra","Subobra","Horas","Tipo"]],body:rows,
+        margin:{left:PL,right:PR},
+        styles:{fontSize:8,cellPadding:2,textColor:[26,22,18]},
+        headStyles:{fillColor:[245,240,232],textColor:[122,110,95],fontStyle:"bold",fontSize:7},
+      });
+      y=doc.lastAutoTable.finalY+6;
+    });
+    mostrarPDF(doc.output("blob"), "Resumen mensual");
+  }
+
+  if(!session){return(<><LoginScreen accounts={accounts} onLogin={handleLogin}/>{toastEl}</>);}
+
+  const sortedData=[...data].sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id);
+  const commonProps={data:sortedData,festivos,session,adminOverrides,ausencias,fichajes,accounts};
+
+  function renderTab(){
+    if(showQuick)return<QuickInput {...commonProps} onSaveMulti={handleSaveMulti} toast={toastShow}/>;
+    if(showParteFormal)return<ParteFormaScreen data={sortedData} festivos={festivos} obrasMeta={obrasMeta} setObrasMeta={setObrasMeta} onClose={()=>setShowParteFormal(false)} toast={toastShow}/>;
+    if(showFichaje)return<FichajeScreen session={session} fichajes={fichajes} setFichajes={setFichajes} toast={toastShow}/>;
+
+    switch(tab){
+      case"dashboard":return<Dashboard {...commonProps} setTab={t=>{setShowQuick(false);setShowFichaje(false);setTab(t);}} onSelectWorker={w=>setModalWorker(w)} onSelectObra={o=>setModalObra(o)}/>;
+      case"miperfil":return<MiPerfil {...commonProps} onLogout={handleLogout}/>;
+      case"partes":return<PartesList {...commonProps} onSelectParte={p=>{setModalParte(p);setEditParte(null);}} onSelectWorker={w=>setModalWorker(w)} onSelectObra={o=>setModalObra(o)}/>;
+      case"nuevo":return<NuevoParte {...commonProps} onSave={handleSaveParte} prefill={prefillNuevo} toast={toastShow}/>;
+      case"fichar":return<FicharScreen {...commonProps} onSave={handleSaveParte} toast={toastShow}/>;
+      case"ausencias":return<AusenciasScreen session={session} ausencias={ausencias} setAusencias={setAusencias} toast={toastShow}/>;
+      case"equipo":return<EquipoList {...commonProps} onSelectWorker={w=>setModalWorker(w)}/>;
+      case"obras":return<ObrasList data={sortedData} session={session} onSelectObra={o=>setModalObra(o)}/>;
+      case"cal":return<CalendarView {...commonProps} onSelectParte={p=>setModalParte(p)}/>;
+      case"cfg":return<ConfigScreen {...commonProps} setFestivos={setFestivos} setAdminOverrides={setAdminOverrides} setData={setData} setAccounts={setAccounts} toast={toastShow} onLogout={handleLogout}/>;
+      default:return null;
+    }
+  }
+
+  return(
+    <div style={{maxWidth:520,margin:"0 auto",minHeight:"100vh",background:T.bg,position:"relative"}}>
+      {renderTab()}
+      {session.isAdmin&&tab==="partes"&&!showParteFormal&&(
+        <div style={{position:"fixed",bottom:70,right:16,display:"flex",flexDirection:"column",gap:8,zIndex:90}}>
+          <button onClick={()=>{setShowParteFormal(true);setShowQuick(false);setShowFichaje(false);}} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"8px 14px",fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",boxShadow:T.shadowM}}>📄 Parte PDF</button>
+          <button onClick={generateResumenPDF} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"8px 14px",fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",boxShadow:T.shadowM}}>🖨 PDF Mes</button>
+        </div>
+      )}
+      {session.isAdmin&&tab==="dashboard"&&(
+        <div style={{position:"fixed",bottom:70,right:16,zIndex:90}}>
+          <button onClick={()=>{setShowFichaje(f=>!f);setShowQuick(false);}} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"8px 14px",fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",boxShadow:T.shadowM}}>🕐 Fichaje</button>
+        </div>
+      )}
+      <NavBar tab={showQuick?"partes":showFichaje?"dashboard":tab} setTab={t=>{setShowQuick(false);setShowFichaje(false);setTab(t);}} isAdmin={session.isAdmin} ausencias={ausencias}/>
+      {modalObra&&<ObraModal obraName={modalObra} data={sortedData} festivos={festivos} adminOverrides={adminOverrides} session={session} onClose={()=>setModalObra(null)} obrasMeta={obrasMeta} setObrasMeta={setObrasMeta}/>}
+      {modalWorker&&<WorkerModal workerName={modalWorker} data={sortedData} festivos={festivos} adminOverrides={adminOverrides} session={session} ausencias={ausencias} onClose={()=>setModalWorker(null)}/>}
+      {modalParte&&!editParte&&<ParteModal parte={modalParte} data={sortedData} festivos={festivos} session={session} onClose={()=>setModalParte(null)} onDelete={handleDeleteParte} onEdit={p=>{setEditParte(p);setModalParte(null);setTab("nuevo");setPrefillNuevo(p);}}/>}
+      {toastEl}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
