@@ -169,7 +169,7 @@ function mostrarPDF(pdfBlob, nombre){
   const btnDown=document.createElement("a");
   btnDown.textContent="⬇ Descargar";
   btnDown.href=pdfUrl;
-  btnDown.download=(nombre||"parte")+".pdf";
+  btnDown.download=((nombre||"parte").replace(/[·\s]+/g,"_").replace(/_+/g,"_"))+".pdf";
   btnDown.style.cssText="background:#c9a84c;color:#1a1612;border:none;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial;flex-shrink:0;text-decoration:none;";
   const btnClose=document.createElement("button");
   btnClose.textContent="✕ Cerrar";
@@ -1095,7 +1095,7 @@ function LoginScreen({accounts,onLogin}){
 
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
 // ─── FICHAR ───────────────────────────────────────────────────────────────────
-function FicharScreen({data,session,festivos,adminOverrides,onSave,toast}){
+function FicharScreen({data,session,festivos,adminOverrides,onSave,toast,obrasMeta}){
   const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
   const allObras=[...new Set(data.map(e=>e.obra))].sort();
   const [trabajador,setTrabajador]=useState(session.isAdmin?"JCM":session.name);
@@ -1681,9 +1681,9 @@ function PartesList({data,festivos,session,onSelectParte,onSelectWorker,onSelect
 }
 
 // ─── NUEVO PARTE ──────────────────────────────────────────────────────────────
-function NuevoParte({data,session,festivos,onSave,prefill,toast}){
+function NuevoParte({data,session,festivos,onSave,prefill,toast,obrasMeta}){
   const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
-  const allObras=[...new Set(data.map(e=>e.obra))].sort();
+  const allObras=[...new Set(data.map(e=>e.obra))].filter(o=>!(obrasMeta&&obrasMeta[obraKey(o)]&&obrasMeta[obraKey(o)].cerrada)).sort();
   const allSubobras=[...new Set(data.filter(e=>e.subobra).map(e=>e.subobra))].sort();
 
   const [trabajador,setTrabajador]=useState(prefill?.trabajador||(session.isAdmin?"JCM":session.name));
@@ -1897,36 +1897,48 @@ function EquipoList({data,festivos,session,ausencias,onSelectWorker}){
 }
 
 // ─── OBRAS LIST ───────────────────────────────────────────────────────────────
-function ObrasList({data,session,onSelectObra}){
+function ObrasList({data,session,onSelectObra,obrasMeta}){
   const [search,setSearch]=useState("");
+  const [verCerradas,setVerCerradas]=useState(false);
   const allObras=[...new Set(data.map(e=>e.obra))].sort();
-  const filtered=allObras.filter(o=>o.toLowerCase().includes(search.toLowerCase()));
   const now=new Date();const yr=now.getFullYear(),mo=now.getMonth();
   const mesData=data.filter(e=>{const d=new Date(e.fecha+"T12:00:00");return d.getFullYear()===yr&&d.getMonth()===mo;});
+  const isCerrada=o=>(obrasMeta&&obrasMeta[obraKey(o)]&&obrasMeta[obraKey(o)].cerrada)||false;
+  const abiertas=allObras.filter(o=>!isCerrada(o)&&o.toLowerCase().includes(search.toLowerCase()));
+  const cerradas=allObras.filter(o=>isCerrada(o)&&o.toLowerCase().includes(search.toLowerCase()));
+  const filtered=verCerradas?cerradas:abiertas;
+  function ObraCard({o}){
+    const oData=data.filter(e=>e.obra===o);
+    const totalH=oData.reduce((s,e)=>s+e.horas,0);
+    const workers=[...new Set(oData.map(e=>e.trabajador))];
+    const hMes=mesData.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
+    const isActive=mesData.some(e=>e.obra===o);
+    const cerrada=isCerrada(o);
+    return(
+      <div key={o} onClick={()=>onSelectObra(o)} style={{background:T.bg2,borderRadius:14,padding:"13px 16px",border:`1px solid ${isActive?T.goldBorder:T.border}`,display:"flex",gap:12,cursor:"pointer",boxShadow:T.shadow,alignItems:"center",opacity:cerrada?0.6:1}}>
+        <div style={{width:12,height:12,borderRadius:"50%",background:cerrada?"#aaa":obraColor(o,allObras),flexShrink:0,marginTop:2}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:T.sans,fontWeight:700,fontSize:14,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o}{cerrada&&<span style={{fontFamily:T.sans,fontSize:10,color:"#aaa",fontWeight:500,marginLeft:6}}>cerrada</span>}</div>
+          <div style={{fontFamily:T.sans,fontSize:11,color:T.text2,marginTop:2}}>{workers.length} trabajador{workers.length!==1?"es":""} · {oData.length} partes · {totalH}h total</div>
+          {isActive&&<div style={{fontFamily:T.sans,fontSize:11,color:T.goldDark,marginTop:2,fontWeight:600}}>Activa este mes · {hMes}h</div>}
+        </div>
+        <span style={{color:T.text3,fontSize:16}}>›</span>
+      </div>
+    );
+  }
   return(
     <div style={{paddingBottom:80}}>
-      <Header title="Obras" sub={`${allObras.length} en total`}/>
+      <Header title="Obras" sub={`${abiertas.length} activas · ${cerradas.length} cerradas`}/>
       <div style={{padding:"12px 14px 0"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar obra..." style={{width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none",marginBottom:12}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar obra..." style={{width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${T.border}`,background:T.bg2,fontFamily:T.sans,fontSize:14,color:T.text,outline:"none",marginBottom:10}}/>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          {[["abiertas","Activas"],["cerradas","Cerradas"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setVerCerradas(k==="cerradas")} style={{flex:1,padding:"8px",borderRadius:10,border:`1px solid ${(verCerradas?(k==="cerradas"):(k==="abiertas"))?T.goldBorder:T.border}`,background:(verCerradas?(k==="cerradas"):(k==="abiertas"))?T.goldDim:T.bg3,fontFamily:T.sans,fontSize:13,fontWeight:600,color:(verCerradas?(k==="cerradas"):(k==="abiertas"))?T.goldDark:T.text2,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {filtered.map(o=>{
-            const oData=data.filter(e=>e.obra===o);
-            const totalH=oData.reduce((s,e)=>s+e.horas,0);
-            const workers=[...new Set(oData.map(e=>e.trabajador))];
-            const hMes=mesData.filter(e=>e.obra===o).reduce((s,e)=>s+e.horas,0);
-            const isActive=mesData.some(e=>e.obra===o);
-            return(
-              <div key={o} onClick={()=>onSelectObra(o)} style={{background:T.bg2,borderRadius:14,padding:"13px 16px",border:`1px solid ${isActive?T.goldBorder:T.border}`,display:"flex",gap:12,cursor:"pointer",boxShadow:T.shadow,alignItems:"center"}}>
-                <div style={{width:12,height:12,borderRadius:"50%",background:obraColor(o,allObras),flexShrink:0,marginTop:2}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:T.sans,fontWeight:700,fontSize:14,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o}</div>
-                  <div style={{fontFamily:T.sans,fontSize:11,color:T.text2,marginTop:2}}>{workers.length} trabajador{workers.length!==1?"es":""} · {oData.length} partes · {totalH}h total</div>
-                  {isActive&&<div style={{fontFamily:T.sans,fontSize:11,color:T.goldDark,marginTop:2,fontWeight:600}}>Activa este mes · {hMes}h</div>}
-                </div>
-                <span style={{color:T.text3,fontSize:16}}>›</span>
-              </div>
-            );
-          })}
+          {filtered.map(o=><ObraCard key={o} o={o}/>)}
+          {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 20px",fontFamily:T.sans,color:T.text3}}>Sin obras</div>}
         </div>
       </div>
     </div>
@@ -2258,6 +2270,13 @@ function ObraModal({obraName,data,festivos,adminOverrides,session,onClose,obrasM
     return{name:w,horas:we.reduce((s,e)=>s+e.horas,0),partes:we.length};
   }).sort((a,b)=>b.horas-a.horas);
 
+  const mk=obraKey(obraName);
+  const isCerrada=(obrasMeta&&obrasMeta[mk]&&obrasMeta[mk].cerrada)||false;
+  function toggleCerrada(){
+    const meta=(obrasMeta&&obrasMeta[mk])||{};
+    const upd={...obrasMeta,[mk]:{...meta,cerrada:!isCerrada}};
+    setObrasMeta(upd);localStorage.setItem("wk_obras_meta",JSON.stringify(upd));
+  }
   return(
     <Modal title={obraName} onClose={onClose}>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
@@ -2265,6 +2284,11 @@ function ObraModal({obraName,data,festivos,adminOverrides,session,onClose,obrasM
         <StatBox label="Trabajadores" value={workers.length}/>
         <StatBox label="Partes" value={oData.length}/>
       </div>
+      {session.isAdmin&&(
+        <button onClick={toggleCerrada} style={{width:"100%",marginBottom:14,padding:"9px",borderRadius:10,border:`1px solid ${isCerrada?T.goldBorder:"#ddd"}`,background:isCerrada?T.goldDim:"#f5f5f5",fontFamily:T.sans,fontSize:13,fontWeight:600,color:isCerrada?T.goldDark:"#888",cursor:"pointer"}}>
+          {isCerrada?"🔓 Reabrir obra":"🔒 Cerrar obra"}
+        </button>
+      )}
       <div style={{display:"flex",gap:6,marginBottom:14,borderBottom:`1px solid ${T.border}`,paddingBottom:10}}>
         {["resumen","subobras","archivos"].map(t=>(
           <button key={t} onClick={()=>setActiveTab(t)} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${activeTab===t?T.gold:T.border}`,background:activeTab===t?T.goldDim:"transparent",fontFamily:T.sans,fontSize:12,fontWeight:600,color:activeTab===t?T.goldDark:T.text2,cursor:"pointer"}}>
@@ -2452,6 +2476,7 @@ function CalendarView({data,festivos,session,ausencias,onSelectParte}){
 function AusenciasScreen({session,ausencias,setAusencias,toast}){
   const allWorkers=["JCM","Txema","Javi ESE2","Carlos Camacho","Jimmy Jazz S2","Manja","Paco Ortega","Gustavo"];
   const [showForm,setShowForm]=useState(false);
+  const [editando,setEditando]=useState(null); // ausencia que se está editando
   const [tipo,setTipo]=useState("vacaciones");
   const [fechaIni,setFechaIni]=useState(today());
   const [fechaFin,setFechaFin]=useState(today());
@@ -2462,11 +2487,32 @@ function AusenciasScreen({session,ausencias,setAusencias,toast}){
   const pendientes=(ausencias||[]).filter(a=>a.estado==="pendiente");
   const todas=(ausencias||[]).slice().reverse();
 
-  function handleSolicitar(){
-    const nueva={id:Date.now(),trabajador:session.name,tipo,fechaInicio:fechaIni,fechaFin:fechaFin>=fechaIni?fechaFin:fechaIni,motivo:motivo.trim(),estado:"pendiente",createdAt:new Date().toISOString()};
-    const upd=[...ausencias,nueva];
+  function abrirNueva(){
+    setEditando(null);setTipo("vacaciones");setFechaIni(today());setFechaFin(today());setMotivo("");setShowForm(true);
+  }
+
+  function abrirEditar(a){
+    setEditando(a);setTipo(a.tipo);setFechaIni(a.fechaInicio);setFechaFin(a.fechaFin||a.fechaInicio);setMotivo(a.motivo||"");setShowForm(true);
+  }
+
+  function handleGuardar(){
+    if(editando){
+      const upd=(ausencias||[]).map(a=>a.id===editando.id?{...a,tipo,fechaInicio:fechaIni,fechaFin:fechaFin>=fechaIni?fechaFin:fechaIni,motivo:motivo.trim()}:a);
+      setAusencias(upd);localStorage.setItem("wk_ausencias",JSON.stringify(upd));
+      toast("Ausencia actualizada");
+    } else {
+      const nueva={id:Date.now(),trabajador:session.name,tipo,fechaInicio:fechaIni,fechaFin:fechaFin>=fechaIni?fechaFin:fechaIni,motivo:motivo.trim(),estado:"pendiente",createdAt:new Date().toISOString()};
+      const upd=[...ausencias,nueva];
+      setAusencias(upd);localStorage.setItem("wk_ausencias",JSON.stringify(upd));
+      toast("Solicitud enviada");
+    }
+    setShowForm(false);setMotivo("");setEditando(null);
+  }
+
+  function handleEliminar(id){
+    const upd=(ausencias||[]).filter(a=>a.id!==id);
     setAusencias(upd);localStorage.setItem("wk_ausencias",JSON.stringify(upd));
-    toast("Solicitud enviada");setShowForm(false);setMotivo("");
+    toast("Ausencia eliminada");
   }
 
   function handleEstado(id,estado){
@@ -2485,7 +2531,7 @@ function AusenciasScreen({session,ausencias,setAusencias,toast}){
 
   return(
     <div style={{paddingBottom:80}}>
-      <Header title="Ausencias" right={<Btn small onClick={()=>setShowForm(true)}>+ Solicitar</Btn>}/>
+      <Header title="Ausencias" right={<Btn small onClick={abrirNueva}>+ Solicitar</Btn>}/>
       {session.isAdmin&&(
         <div style={{padding:"10px 14px 0",display:"flex",gap:6}}>
           {["pendientes","todas"].map(t=><Pill key={t} label={t==="pendientes"?`Pendientes (${pendientes.length})`:"Todas"} active={tab===t} onClick={()=>setTab(t)}/>)}
@@ -2497,7 +2543,9 @@ function AusenciasScreen({session,ausencias,setAusencias,toast}){
         </div>
       )}
       <div style={{padding:"12px 14px 0",display:"flex",flexDirection:"column",gap:8}}>
-        {list.map(a=>(
+        {list.map(a=>{
+          const puedeEditar=session.isAdmin||(a.trabajador===session.name&&a.estado==="pendiente");
+          return(
           <div key={a.id} style={{background:T.bg2,borderRadius:14,padding:"13px 16px",border:`1px solid ${T.border}`,boxShadow:T.shadow}}>
             <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
               <Avatar name={a.trabajador} size={34} color={WC[allWorkers.indexOf(a.trabajador)%WC.length]}/>
@@ -2508,19 +2556,22 @@ function AusenciasScreen({session,ausencias,setAusencias,toast}){
               </div>
               <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:colorEstado(a.estado),background:bgEstado(a.estado),padding:"3px 10px",borderRadius:10,flexShrink:0}}>{a.estado}</span>
             </div>
-            {session.isAdmin&&a.estado==="pendiente"&&(
-              <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8}}>
+              {session.isAdmin&&a.estado==="pendiente"&&<>
                 <Btn variant="secondary" small style={{flex:1,background:T.greenDim,color:T.green,border:`1px solid rgba(45,125,90,.2)`}} onClick={()=>handleEstado(a.id,"aprobada")}>✓ Aprobar</Btn>
                 <Btn variant="danger" small style={{flex:1}} onClick={()=>handleEstado(a.id,"rechazada")}>✕ Rechazar</Btn>
-              </div>
-            )}
+              </>}
+              {puedeEditar&&<Btn variant="secondary" small style={{flex:1}} onClick={()=>abrirEditar(a)}>✏️ Editar</Btn>}
+              {session.isAdmin&&<Btn variant="danger" small style={{flex:1}} onClick={()=>handleEliminar(a.id)}>🗑 Borrar</Btn>}
+            </div>
           </div>
-        ))}
+          );
+        })}
         {list.length===0&&<div style={{textAlign:"center",padding:"40px 20px",fontFamily:T.sans,color:T.text3}}>Sin solicitudes</div>}
       </div>
 
       {showForm&&(
-        <Modal title="Solicitar ausencia" onClose={()=>setShowForm(false)}>
+        <Modal title={editando?"Editar ausencia":"Solicitar ausencia"} onClose={()=>{setShowForm(false);setEditando(null);}}>
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div>
               <label style={lbl}>Tipo</label>
@@ -2540,7 +2591,7 @@ function AusenciasScreen({session,ausencias,setAusencias,toast}){
               <label style={lbl}>Motivo <span style={{fontWeight:400,color:T.text3}}>(opcional)</span></label>
               <textarea value={motivo} onChange={e=>setMotivo(e.target.value)} rows={2} style={{...inp,resize:"vertical"}} placeholder="Describe el motivo..."/>
             </div>
-            <Btn onClick={handleSolicitar} style={{width:"100%"}}>Enviar solicitud</Btn>
+            <Btn onClick={handleGuardar} style={{width:"100%"}}>{editando?"Guardar cambios":"Enviar solicitud"}</Btn>
           </div>
         </Modal>
       )}
@@ -2904,11 +2955,11 @@ function App(){
       case"dashboard":return<Dashboard {...commonProps} setTab={t=>{setShowQuick(false);setShowFichaje(false);setTab(t);}} onSelectWorker={w=>setModalWorker(w)} onSelectObra={o=>setModalObra(o)}/>;
       case"miperfil":return<MiPerfil {...commonProps} onLogout={handleLogout}/>;
       case"partes":return<PartesList {...commonProps} onSelectParte={p=>{setModalParte(p);setEditParte(null);}} onSelectWorker={w=>setModalWorker(w)} onSelectObra={o=>setModalObra(o)}/>;
-      case"nuevo":return<NuevoParte {...commonProps} onSave={handleSaveParte} prefill={prefillNuevo} toast={toastShow}/>;
-      case"fichar":return<FicharScreen {...commonProps} onSave={handleSaveParte} toast={toastShow}/>;
+      case"nuevo":return<NuevoParte obrasMeta={obrasMeta} {...commonProps} onSave={handleSaveParte} prefill={prefillNuevo} toast={toastShow}/>;
+      case"fichar":return<FicharScreen {...commonProps} onSave={handleSaveParte} toast={toastShow} obrasMeta={obrasMeta}/>;
       case"ausencias":return<AusenciasScreen session={session} ausencias={ausencias} setAusencias={setAusencias} toast={toastShow}/>;
       case"equipo":return<EquipoList {...commonProps} onSelectWorker={w=>setModalWorker(w)}/>;
-      case"obras":return<ObrasList data={sortedData} session={session} onSelectObra={o=>setModalObra(o)}/>;
+      case"obras":return<ObrasList obrasMeta={obrasMeta} data={sortedData} session={session} onSelectObra={o=>setModalObra(o)}/>;
       case"cal":return<CalendarView {...commonProps} onSelectParte={p=>setModalParte(p)}/>;
       case"cfg":return<ConfigScreen {...commonProps} setFestivos={setFestivos} setAdminOverrides={setAdminOverrides} setData={setData} setAccounts={setAccounts} toast={toastShow} onLogout={handleLogout}/>;
       default:return null;
